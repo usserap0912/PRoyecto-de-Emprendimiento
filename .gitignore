@@ -12,6 +12,12 @@
 .swiftpm/
 migrate_working_dir/
 
+# Android platform tools
+platform-tools.zip
+platform-tools/
+nul
+
+
 # IntelliJ related
 *.iml
 *.ipr
