@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/chat_message.dart';
@@ -19,23 +20,42 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   final ScrollController _scrollController = ScrollController();
   List<ChatMessage> _messages = [];
   bool _isLoading = true;
+  StreamSubscription<List<ChatMessage>>? _messageSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+    _loadMessagesAndSubscribe();
+  }
+
+  Future<void> _loadMessagesAndSubscribe() async {
+    // Primero cargar mensajes existentes
+    await _loadMessages();
+
+    // Luego suscribirse al stream en tiempo real
+    _messageSubscription = _chatService.getMessagesStream().listen((messages) {
+      if (mounted) {
+        setState(() {
+          _messages = messages;
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+    });
   }
 
   Future<void> _loadMessages() async {
     try {
       final messages = await _chatService.getMessages();
-      setState(() {
-        _messages = messages;
-        _isLoading = false;
-      });
-      _scrollToBottom();
+      if (mounted) {
+        setState(() {
+          _messages = messages;
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -56,21 +76,14 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     if (content.isEmpty) return;
 
     _messageController.clear();
-    setState(() {
-      _messages.add(ChatMessage(
-        id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
-        userCode: widget.userCode,
-        content: content,
-        createdAt: DateTime.now(),
-      ));
-    });
-    _scrollToBottom();
 
+    // El stream se encargará de agregar el mensaje cuando llegue del backend
     await _chatService.sendMessage(widget.userCode, content);
   }
 
   @override
   void dispose() {
+    _messageSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -100,7 +113,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
             margin: const EdgeInsets.only(right: 12),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -112,11 +125,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
       ),
       body: Column(
         children: [
-          // Chat header info
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: AppTheme.primaryGreen.withOpacity(0.05),
+            color: AppTheme.primaryGreen.withValues(alpha: 0.05),
             child: Row(
               children: [
                 Icon(Icons.info_outline, size: 14, color: Colors.grey[500]),
@@ -128,7 +140,6 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
               ],
             ),
           ),
-          // Messages list
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -148,7 +159,6 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                         },
                       ),
           ),
-          // Input bar
           Container(
             padding: EdgeInsets.only(
               left: 12,
@@ -160,7 +170,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),
@@ -251,7 +261,6 @@ class _ChatBubble extends StatelessWidget {
           crossAxisAlignment:
               isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            // User code label
             Padding(
               padding: EdgeInsets.only(
                 left: isMine ? 0 : 12,
@@ -263,13 +272,12 @@ class _ChatBubble extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   color: isMine
-                      ? AppTheme.primaryGreen.withOpacity(0.7)
+                      ? AppTheme.primaryGreen.withValues(alpha: 0.7)
                       : Colors.grey[500],
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            // Message bubble
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -277,10 +285,8 @@ class _ChatBubble extends StatelessWidget {
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
-                  bottomLeft:
-                      Radius.circular(isMine ? 18 : 4),
-                  bottomRight:
-                      Radius.circular(isMine ? 4 : 18),
+                  bottomLeft: Radius.circular(isMine ? 18 : 4),
+                  bottomRight: Radius.circular(isMine ? 4 : 18),
                 ),
               ),
               child: Column(
@@ -300,7 +306,7 @@ class _ChatBubble extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 10,
                       color: isMine
-                          ? Colors.white.withOpacity(0.6)
+                          ? Colors.white.withValues(alpha: 0.6)
                           : Colors.grey[500],
                     ),
                   ),

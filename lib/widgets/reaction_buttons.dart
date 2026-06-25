@@ -5,6 +5,9 @@ class ReactionButtons extends StatefulWidget {
   final int shieldCount;
   final int alertCount;
   final int checkCount;
+  final bool shieldActive;
+  final bool alertActive;
+  final bool checkActive;
   final VoidCallback onShieldTap;
   final VoidCallback onAlertTap;
   final VoidCallback onCheckTap;
@@ -14,6 +17,9 @@ class ReactionButtons extends StatefulWidget {
     required this.shieldCount,
     required this.alertCount,
     required this.checkCount,
+    this.shieldActive = false,
+    this.alertActive = false,
+    this.checkActive = false,
     required this.onShieldTap,
     required this.onAlertTap,
     required this.onCheckTap,
@@ -24,9 +30,28 @@ class ReactionButtons extends StatefulWidget {
 }
 
 class _ReactionButtonsState extends State<ReactionButtons> {
-  bool _shieldActive = false;
-  bool _alertActive = false;
-  bool _checkActive = false;
+  late bool _shieldActive;
+  late bool _alertActive;
+  late bool _checkActive;
+
+  @override
+  void initState() {
+    super.initState();
+    _shieldActive = widget.shieldActive;
+    _alertActive = widget.alertActive;
+    _checkActive = widget.checkActive;
+  }
+
+  @override
+  void didUpdateWidget(ReactionButtons oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sincronizar si el widget padre actualiza los counts
+    if (oldWidget.shieldCount != widget.shieldCount ||
+        oldWidget.alertCount != widget.alertCount ||
+        oldWidget.checkCount != widget.checkCount) {
+      // No reseteamos el estado activo del usuario cuando cambian los counts
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +129,7 @@ class _ReactionButton extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.1) : Colors.transparent,
+          color: isActive ? color.withValues(alpha: 0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(

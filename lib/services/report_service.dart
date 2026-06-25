@@ -1,36 +1,64 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/services/supabase_service.dart';
 
 class ReportService {
   final SupabaseService _supabase = SupabaseService();
 
-  /// Obtiene todos los reportes activos
-  Future<List<Report>> getReports({String? zone}) async {
+  /// Obtiene todos los reportes, opcionalmente filtrados por zona
+  Future<List<Report>> getReports({int? zone}) async {
     try {
-      var query = _supabase.client
-          .from(_supabase.reportsTable)
-          .select();
+      var query = _supabase.client.from(_supabase.reportsTable).select();
 
       if (zone != null) {
         query = query.eq('zone', zone);
       }
 
-      final response = await query.order('created_at', ascending: false);
+      final response = await query
+          .order('created_at', ascending: false)
+          .limit(50);
+
       return (response as List)
           .map((item) => Report.fromMap(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      // Si no hay conexión a Supabase, devolvemos datos de ejemplo
+      debugPrint('ReportService.getReports error: $e');
       return _getSampleReports();
     }
   }
 
-  /// Crea un nuevo reporte
-  Future<void> createReport(Report report) async {
+  /// Crea un nuevo reporte. Si hay imágenes/videos, los sube primero a Storage.
+  Future<bool> createReport(Report report,
+      {String? localImagePath, String? localVideoPath}) async {
     try {
-      await _supabase.client.from(_supabase.reportsTable).insert(report.toMap());
+      Map<String, dynamic> reportData = report.toMap();
+
+      // Subir imagen si existe
+      if (localImagePath != null && File(localImagePath).existsSync()) {
+        final imageUrl = await _supabase.uploadFile(localImagePath);
+        if (imageUrl != null) {
+          reportData['image_url'] = imageUrl;
+        }
+      }
+
+      // Subir video si existe
+      if (localVideoPath != null && File(localVideoPath).existsSync()) {
+        final videoUrl =
+            await _supabase.uploadFile(localVideoPath, isVideo: true);
+        if (videoUrl != null) {
+          reportData['video_url'] = videoUrl;
+        }
+      }
+
+      // Quitar el id local para que Supabase lo genere automáticamente
+      reportData.remove('id');
+
+      await _supabase.client.from(_supabase.reportsTable).insert(reportData);
+      return true;
     } catch (e) {
-      // Fallback: no hacer nada, en modo offline se perdería
+      debugPrint('ReportService.createReport error: $e');
+      return false;
     }
   }
 
@@ -42,20 +70,20 @@ class ReportService {
           .update({'status': status})
           .eq('id', reportId);
     } catch (e) {
-      // Fallback offline
+      debugPrint('ReportService.updateReportStatus error: $e');
     }
   }
 
-  /// Reacciona a un reporte
-  Future<void> reactToReport(String reportId, String reactionType) async {
-    try {
-      await _supabase.client.from(_supabase.reactionsTable).insert({
-        'report_id': reportId,
-        'reaction_type': reactionType,
-      });
-    } catch (e) {
-      // Fallback offline
-    }
+  /// Reacciona a un reporte (toggle: agrega o quita la reacción)
+  Future<void> toggleReaction(
+      String reportId, String userCode, String reactionType) async {
+    await _supabase.toggleReaction(reportId, userCode, reactionType);
+  }
+
+  /// Obtiene las reacciones del usuario para un reporte
+  Future<Set<String>> getUserReactions(
+      String reportId, String userCode) async {
+    return _supabase.getUserReactions(reportId, userCode);
   }
 
   /// Devuelve datos de ejemplo cuando no hay conexión

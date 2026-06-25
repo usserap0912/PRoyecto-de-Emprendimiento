@@ -64,7 +64,7 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -88,14 +88,13 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                     'Escoge tu sector en Collique',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 24),
-            // Subtitle
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
@@ -108,7 +107,6 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            // Zone grid
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -131,7 +129,7 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                         duration: const Duration(milliseconds: 200),
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? AppTheme.primaryGreen.withOpacity(0.1)
+                              ? AppTheme.primaryGreen.withValues(alpha: 0.1)
                               : Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
@@ -143,8 +141,8 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                           boxShadow: [
                             BoxShadow(
                               color: isSelected
-                                  ? AppTheme.primaryGreen.withOpacity(0.2)
-                                  : Colors.black.withOpacity(0.05),
+                                  ? AppTheme.primaryGreen.withValues(alpha: 0.2)
+                                  : Colors.black.withValues(alpha: 0.05),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -193,7 +191,6 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                 ),
               ),
             ),
-            // Continue button
             Padding(
               padding: const EdgeInsets.all(24),
               child: SizedBox(

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/report.dart';
+import 'package:safezone/services/report_service.dart';
 import 'package:safezone/widgets/reaction_buttons.dart';
 import 'package:safezone/widgets/tag_badge.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   final Report report;
   final String userCode;
   final VoidCallback onReactionChanged;
@@ -18,7 +19,38 @@ class PostCard extends StatelessWidget {
   });
 
   @override
+  State<PostCard> createState() => _PostCardState();
+}
+
+class _PostCardState extends State<PostCard> {
+  final ReportService _reportService = ReportService();
+  Set<String> _userReactions = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserReactions();
+  }
+
+  Future<void> _loadUserReactions() async {
+    final reactions = await _reportService.getUserReactions(
+        widget.report.id, widget.userCode);
+    if (mounted) setState(() => _userReactions = reactions);
+  }
+
+  Future<void> _handleReaction(String reactionType) async {
+    await _reportService.toggleReaction(
+        widget.report.id, widget.userCode, reactionType);
+    await _loadUserReactions();
+    widget.onReactionChanged();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final mutedColor = isDark ? Colors.grey[400]! : Colors.grey[500]!;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -29,12 +61,11 @@ class PostCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                // User avatar placeholder
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: AppTheme.primaryGreen.withOpacity(0.1),
+                  backgroundColor: AppTheme.primaryGreen.withValues(alpha: 0.1),
                   child: Text(
-                    report.userCode.substring(5, 7),
+                    widget.report.userCode.substring(5, 7),
                     style: const TextStyle(
                       color: AppTheme.primaryGreen,
                       fontWeight: FontWeight.bold,
@@ -48,24 +79,25 @@ class PostCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        report.userCode,
-                        style: const TextStyle(
+                        widget.report.userCode,
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
+                          color: textColor,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${timeago.format(report.createdAt, locale: 'es')} · Zona ${report.zone}',
+                        '${timeago.format(widget.report.createdAt, locale: 'es')} · Zona ${widget.report.zone}',
                         style: TextStyle(
-                          color: Colors.grey[500],
+                          color: mutedColor,
                           fontSize: 12,
                         ),
                       ),
                     ],
                   ),
                 ),
-                TagBadge(tag: report.tag, label: report.tagLabel),
+                TagBadge(tag: widget.report.tag, label: widget.report.tagLabel),
               ],
             ),
           ),
@@ -74,13 +106,13 @@ class PostCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Row(
               children: [
-                _buildCategoryChip(report.category),
-                if (report.status == 'resuelto')
+                _CategoryChip(category: widget.report.category),
+                if (widget.report.status == 'resuelto')
                   Container(
                     margin: const EdgeInsets.only(left: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppTheme.safeGreen.withOpacity(0.1),
+                      color: AppTheme.safeGreen.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Row(
@@ -102,34 +134,63 @@ class PostCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
-              report.description,
-              style: const TextStyle(
+              widget.report.description,
+              style: TextStyle(
                 fontSize: 14,
                 height: 1.4,
-                color: Colors.black87,
+                color: textColor,
               ),
             ),
           ),
-          // Image if available
-          if (report.imageUrl != null) ...[
+          // Image if available — muestra la imagen real desde URL
+          if (widget.report.imageUrl != null &&
+              widget.report.imageUrl!.startsWith('http')) ...[
             const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                height: 200,
-                width: double.infinity,
-                color: Colors.grey[200],
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.image_outlined, size: 40, color: Colors.grey[400]),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Imagen adjunta',
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                      ),
-                    ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: GestureDetector(
+                  onTap: () => _showImageFullscreen(context, widget.report.imageUrl!),
+                  child: Image.network(
+                    widget.report.imageUrl!,
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 200,
+                        color: isDark ? AppTheme.darkSurface : Colors.grey[200],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                            color: AppTheme.primaryGreen,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 200,
+                        color: isDark ? AppTheme.darkSurface : Colors.grey[200],
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.broken_image_outlined,
+                                  size: 40, color: mutedColor),
+                              const SizedBox(height: 8),
+                              Text('No se pudo cargar la imagen',
+                                  style: TextStyle(color: mutedColor, fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -137,17 +198,17 @@ class PostCard extends StatelessWidget {
           ],
           const SizedBox(height: 8),
           // Address if available
-          if (report.address != null)
+          if (widget.report.address != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
               child: Row(
                 children: [
-                  Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[500]),
+                  Icon(Icons.location_on_outlined, size: 14, color: mutedColor),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      report.address!,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      widget.report.address!,
+                      style: TextStyle(fontSize: 12, color: mutedColor),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -155,67 +216,80 @@ class PostCard extends StatelessWidget {
               ),
             ),
           const Divider(height: 1),
-          // Reaction buttons
           ReactionButtons(
-            shieldCount: report.shieldCount,
-            alertCount: report.alertCount,
-            checkCount: report.checkCount,
-            onShieldTap: () {
-              // Handle shield reaction
-              onReactionChanged();
-            },
-            onAlertTap: () {
-              // Handle alert reaction
-              onReactionChanged();
-            },
-            onCheckTap: () {
-              // Handle check reaction
-              onReactionChanged();
-            },
+            shieldCount: widget.report.shieldCount,
+            alertCount: widget.report.alertCount,
+            checkCount: widget.report.checkCount,
+            shieldActive: _userReactions.contains('shield'),
+            alertActive: _userReactions.contains('alert'),
+            checkActive: _userReactions.contains('check'),
+            onShieldTap: () => _handleReaction('shield'),
+            onAlertTap: () => _handleReaction('alert'),
+            onCheckTap: () => _handleReaction('check'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCategoryChip(String category) {
-    IconData icon;
-    Color color;
-    String label;
+  void _showImageFullscreen(BuildContext context, String imageUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                        SizedBox(height: 16),
+                        Text('Error al cargar imagen', style: TextStyle(color: Colors.white54)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-    switch (category) {
-      case 'robo':
-        icon = Icons.visibility_off;
-        color = AppTheme.dangerRed;
-        label = 'Robo';
-        break;
-      case 'sospechoso':
-        icon = Icons.person_search;
-        color = AppTheme.warningYellow;
-        label = 'Sospechoso';
-        break;
-      case 'extorsion':
-        icon = Icons.block;
-        color = AppTheme.dangerRed;
-        label = 'Extorsión';
-        break;
-      case 'alumbrado':
-        icon = Icons.lightbulb_outline;
-        color = AppTheme.warningYellow;
-        label = 'Alumbrado';
-        break;
-      default:
-        icon = Icons.info_outline;
-        color = Colors.grey;
-        label = 'Otros';
-    }
+/// Widget extraído para reuso — usa Report.categoryLabelFor y categoryIconFor
+class _CategoryChip extends StatelessWidget {
+  final String category;
+  const _CategoryChip({required this.category});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Report.categoryColorFor(category);
+    final icon = Report.categoryIconFor(category);
+    final label = Report.categoryLabelFor(category);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

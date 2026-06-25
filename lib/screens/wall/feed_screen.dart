@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/services/report_service.dart';
+import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/screens/wall/widgets/post_card.dart';
+import 'package:safezone/screens/stats/stats_screen.dart';
 import 'package:shimmer/shimmer.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -21,32 +24,67 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   final ReportService _reportService = ReportService();
+  final SupabaseService _supabase = SupabaseService();
   List<Report> _reports = [];
   bool _isLoading = true;
   String _filterTag = 'todas';
+  StreamSubscription<List<Report>>? _reportSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadReports();
+    _subscribeToRealtime();
+  }
+
+  void _subscribeToRealtime() {
+    try {
+      _reportSubscription = _supabase.client
+          .from(_supabase.reportsTable)
+          .stream(primaryKey: ['id'])
+          .eq('zone', widget.zone)
+          .order('created_at', ascending: false)
+          .limit(50)
+          .map((maps) =>
+              maps.map((m) => Report.fromMap(m)).toList())
+          .listen((reports) {
+        if (mounted) {
+          setState(() {
+            _reports = reports;
+            _isLoading = false;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('FeedScreen realtime error: $e');
+    }
   }
 
   Future<void> _loadReports() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final reports = await _reportService.getReports();
-      setState(() {
-        _reports = reports;
-        _isLoading = false;
-      });
+      final reports = await _reportService.getReports(zone: widget.zone);
+      if (mounted) {
+        setState(() {
+          _reports = reports;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   List<Report> get _filteredReports {
     if (_filterTag == 'todas') return _reports;
     return _reports.where((r) => r.tag == _filterTag).toList();
+  }
+
+  @override
+  void dispose() {
+    _reportSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -62,12 +100,28 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
         ),
         actions: [
-          // User badge
+          // Stats button
+          IconButton(
+            icon: const Icon(Icons.bar_chart_rounded, size: 22),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatsScreen(
+                    userCode: widget.userCode,
+                    zone: widget.zone,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Estadísticas',
+          ),
+          // Zone badge
           Container(
             margin: const EdgeInsets.only(right: 12),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -163,7 +217,7 @@ class _FeedScreenState extends State<FeedScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: 4,
-        itemBuilder: (_, __) => Padding(
+        itemBuilder: (_, _) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Container(
             height: 200,
@@ -220,10 +274,10 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.2) : Colors.white.withOpacity(0.15),
+          color: isSelected ? color.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : Colors.white.withOpacity(0.3),
+            color: isSelected ? color : Colors.white.withValues(alpha: 0.3),
             width: isSelected ? 2 : 1,
           ),
         ),

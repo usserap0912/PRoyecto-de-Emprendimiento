@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
+import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/screens/home/home_screen.dart';
 
 class CodeAssignmentScreen extends StatefulWidget {
@@ -18,11 +20,13 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
+  final SupabaseService _supabase = SupabaseService();
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _userCode = _generateCode();
+    _initializeUserCode();
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -34,6 +38,33 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
       CurvedAnimation(parent: _animController, curve: Curves.elasticOut),
     );
     _animController.forward();
+  }
+
+  Future<void> _initializeUserCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedCode = prefs.getString('user_code');
+    final savedZone = prefs.getInt('user_zone');
+
+    // Si ya tiene un código guardado para esta zona, lo reusamos
+    if (savedCode != null && savedZone == widget.zone) {
+      _userCode = savedCode;
+    } else {
+      _userCode = _generateCode();
+      await prefs.setString('user_code', _userCode);
+      await prefs.setInt('user_zone', widget.zone);
+    }
+
+    // Guardar perfil en Supabase (no bloquea, continua en background)
+    _saveProfileToSupabase();
+  }
+
+  Future<void> _saveProfileToSupabase() async {
+    setState(() => _isSaving = true);
+    await _supabase.createProfile({
+      'user_code': _userCode,
+      'zone': widget.zone,
+    });
+    if (mounted) setState(() => _isSaving = false);
   }
 
   String _generateCode() {
@@ -89,7 +120,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                   child: Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -118,7 +149,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                       'Zona ${widget.zone} • Collique',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                     const SizedBox(height: 40),
@@ -129,10 +160,10 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                         vertical: 20,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Column(
@@ -141,7 +172,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                             'Tu código de identidad',
                             style: TextStyle(
                               fontSize: 14,
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -161,7 +192,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.2),
+                              color: Colors.amber.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Row(
@@ -187,7 +218,31 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+                    if (_isSaving)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white.withValues(alpha: 0.7)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Guardando tu identidad...',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: Text(
@@ -195,7 +250,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withValues(alpha: 0.7),
                           height: 1.4,
                         ),
                       ),

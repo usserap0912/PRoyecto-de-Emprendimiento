@@ -4,15 +4,15 @@ class Report {
   final String id;
   final String userCode;
   final int zone;
-  final String category; // 'robo', 'sospechoso', 'extorsion', 'alumbrado', 'otros'
+  final String category;
   final String description;
   final String? imageUrl;
   final String? videoUrl;
   final double? latitude;
   final double? longitude;
   final String? address;
-  final String tag; // 'rojo', 'amarillo', 'verde'
-  final String status; // 'activo', 'resuelto'
+  final String tag;
+  final String status;
   final DateTime createdAt;
   final int shieldCount;
   final int alertCount;
@@ -79,20 +79,9 @@ class Report {
     };
   }
 
-  String get categoryLabel {
-    switch (category) {
-      case 'robo':
-        return 'Robo';
-      case 'sospechoso':
-        return 'Sospechoso';
-      case 'extorsion':
-        return 'Extorsión';
-      case 'alumbrado':
-        return 'Alumbrado';
-      default:
-        return 'Otros';
-    }
-  }
+  // ================================================================
+  // TAG helpers
+  // ================================================================
 
   String get tagLabel {
     switch (tag) {
@@ -108,6 +97,10 @@ class Report {
   }
 
   Color get tagColor {
+    return tagColorFor(tag);
+  }
+
+  static Color tagColorFor(String tag) {
     switch (tag) {
       case 'rojo':
         return const Color(0xFFD32F2F);
@@ -115,6 +108,57 @@ class Report {
         return const Color(0xFFFFA000);
       case 'verde':
         return const Color(0xFF388E3C);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // ================================================================
+  // CATEGORY helpers (static para reuso sin instancia)
+  // ================================================================
+
+  String get categoryLabel => categoryLabelFor(category);
+
+  static String categoryLabelFor(String category) {
+    switch (category) {
+      case 'robo':
+        return 'Robo';
+      case 'sospechoso':
+        return 'Sospechoso';
+      case 'extorsion':
+        return 'Extorsión';
+      case 'alumbrado':
+        return 'Alumbrado';
+      default:
+        return 'Otros';
+    }
+  }
+
+  static IconData categoryIconFor(String category) {
+    switch (category) {
+      case 'robo':
+        return Icons.visibility_off;
+      case 'sospechoso':
+        return Icons.person_search;
+      case 'extorsion':
+        return Icons.block;
+      case 'alumbrado':
+        return Icons.lightbulb_outline;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  static Color categoryColorFor(String category) {
+    switch (category) {
+      case 'robo':
+        return const Color(0xFFD32F2F);
+      case 'extorsion':
+        return const Color(0xFFD32F2F);
+      case 'sospechoso':
+        return const Color(0xFFFFA000);
+      case 'alumbrado':
+        return const Color(0xFFFFA000);
       default:
         return Colors.grey;
     }

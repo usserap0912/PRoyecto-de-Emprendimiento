@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/location_service.dart';
+import 'package:safezone/services/supabase_service.dart';
 
 class SosScreen extends StatefulWidget {
   final String userCode;
@@ -26,6 +27,7 @@ class _SosScreenState extends State<SosScreen>
   Timer? _countdownTimer;
   Timer? _vibrationTimer;
   bool _alertSent = false;
+  bool _saveError = false;
   late AnimationController _pulseAnim;
   late Animation<double> _pulseScale;
 
@@ -55,13 +57,16 @@ class _SosScreenState extends State<SosScreen>
       _isCountingDown = true;
       _countdown = 3;
       _alertSent = false;
+      _saveError = false;
     });
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       HapticFeedback.heavyImpact();
-      setState(() {
-        _countdown--;
-      });
+      if (mounted) {
+        setState(() {
+          _countdown--;
+        });
+      }
 
       if (_countdown == 0) {
         timer.cancel();
@@ -73,40 +78,59 @@ class _SosScreenState extends State<SosScreen>
   void _cancelSos() {
     _countdownTimer?.cancel();
     HapticFeedback.mediumImpact();
-    setState(() {
-      _isCountingDown = false;
-      _isActivated = false;
-      _countdown = 3;
-    });
+    if (mounted) {
+      setState(() {
+        _isCountingDown = false;
+        _isActivated = false;
+        _countdown = 3;
+      });
+    }
   }
 
   Future<void> _sendSosAlert() async {
+    if (!mounted) return;
     setState(() {
       _isCountingDown = false;
       _isActivated = true;
     });
 
-    // Get location
+    // Obtener ubicación
     final locationService = LocationService();
     final position = await locationService.getCurrentLocation();
 
+    String? address;
+    double? lat;
+    double? lng;
+
     if (position != null) {
-      await locationService.getAddressFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
+      lat = position.latitude;
+      lng = position.longitude;
+      address = await locationService.getAddressFromCoordinates(lat, lng);
     }
 
-    setState(() {
-      _alertSent = true;
+    // Guardar en Supabase
+    final supabase = SupabaseService();
+    final saved = await supabase.insertSosAlert({
+      'user_code': widget.userCode,
+      'latitude': lat ?? LocationService.colliqueLat,
+      'longitude': lng ?? LocationService.colliqueLng,
+      'address': address,
+      'status': 'activo',
     });
 
-    // Vibration pattern for alert
+    if (mounted) {
+      setState(() {
+        _alertSent = true;
+        _saveError = !saved;
+      });
+    }
+
+    // Vibración de alerta
     _vibrationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       HapticFeedback.heavyImpact();
     });
 
-    // Auto-cancel after 3 seconds of alert display
+    // Auto-detener vibración después de 3 segundos
     Future.delayed(const Duration(seconds: 3), () {
       _vibrationTimer?.cancel();
     });
@@ -134,14 +158,13 @@ class _SosScreenState extends State<SosScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const SizedBox(height: 20),
-              // Instrucciones
               if (!_isCountingDown && !_isActivated)
                 Column(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Row(
@@ -151,10 +174,7 @@ class _SosScreenState extends State<SosScreen>
                           SizedBox(width: 8),
                           Text(
                             'Solo para emergencias reales',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.white70, fontSize: 14),
                           ),
                         ],
                       ),
@@ -174,7 +194,7 @@ class _SosScreenState extends State<SosScreen>
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         height: 1.4,
                       ),
                     ),
@@ -183,7 +203,6 @@ class _SosScreenState extends State<SosScreen>
 
               const Spacer(),
 
-              // Countdown display
               if (_isCountingDown)
                 Column(
                   children: [
@@ -218,9 +237,9 @@ class _SosScreenState extends State<SosScreen>
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(25),
-                          border: Border.all(color: Colors.white.withOpacity(0.4)),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
                         ),
                         child: const Text(
                           'CANCELAR',
@@ -235,14 +254,13 @@ class _SosScreenState extends State<SosScreen>
                   ],
                 ),
 
-              // Alert sent state
               if (_isActivated && _alertSent)
                 Column(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -266,17 +284,35 @@ class _SosScreenState extends State<SosScreen>
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         height: 1.4,
                       ),
                     ),
+                    if (_saveError)
+                      Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Modo offline - la alerta se guardará cuando tengas conexión',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.amber, fontSize: 12),
+                        ),
+                      ),
                     const SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: () {
-                        setState(() {
-                          _isActivated = false;
-                          _alertSent = false;
-                        });
+                        if (mounted) {
+                          setState(() {
+                            _isActivated = false;
+                            _alertSent = false;
+                            _saveError = false;
+                          });
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
@@ -294,7 +330,6 @@ class _SosScreenState extends State<SosScreen>
                   ],
                 ),
 
-              // Main SOS button
               if (!_isCountingDown && !_isActivated)
                 GestureDetector(
                   onLongPress: _startSos,
@@ -317,13 +352,13 @@ class _SosScreenState extends State<SosScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.red.withOpacity(0.5),
+                                color: Colors.red.withValues(alpha: 0.5),
                                 blurRadius: 30,
                                 spreadRadius: 5,
                               ),
                             ],
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.5),
+                              color: Colors.white.withValues(alpha: 0.5),
                               width: 4,
                             ),
                           ),
@@ -349,7 +384,7 @@ class _SosScreenState extends State<SosScreen>
                                 'Presiona 3s',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.white.withOpacity(0.7),
+                                  color: Colors.white.withValues(alpha: 0.7),
                                 ),
                               ),
                             ],
@@ -362,19 +397,18 @@ class _SosScreenState extends State<SosScreen>
 
               const Spacer(),
 
-              // Footer info
               if (!_isCountingDown && !_isActivated)
                 Container(
                   margin: const EdgeInsets.only(bottom: 24),
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Icon(Icons.location_on, color: Colors.white.withOpacity(0.6), size: 20),
+                      Icon(Icons.location_on, color: Colors.white.withValues(alpha: 0.6), size: 20),
                       const SizedBox(height: 4),
                       Text(
                         'Se compartirá tu ubicación GPS exacta',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.6),
+                          color: Colors.white.withValues(alpha: 0.6),
                           fontSize: 13,
                         ),
                       ),

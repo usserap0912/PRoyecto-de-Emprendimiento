@@ -109,17 +109,17 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _walkWithMe
-                        ? Colors.greenAccent.withOpacity(0.9)
-                        : Colors.white.withOpacity(0.2),
+                        ? Colors.greenAccent.withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(25),
                     border: Border.all(
-                      color: _walkWithMe ? Colors.greenAccent : Colors.white.withOpacity(0.3),
+                      color: _walkWithMe ? Colors.greenAccent : Colors.white.withValues(alpha: 0.3),
                       width: 2,
                     ),
                     boxShadow: _walkWithMe
                         ? [
                             BoxShadow(
-                              color: Colors.greenAccent.withOpacity(0.5),
+                              color: Colors.greenAccent.withValues(alpha: 0.5),
                               blurRadius: 15,
                               spreadRadius: _pulseAnim.value * 3,
                             ),
@@ -202,7 +202,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                             scale: _pulseAnim.value,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: Colors.greenAccent.withOpacity(0.4),
+                                color: Colors.greenAccent.withValues(alpha: 0.4),
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.greenAccent,
@@ -210,7 +210,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.greenAccent.withOpacity(0.3),
+                                    color: Colors.greenAccent.withValues(alpha: 0.3),
                                     blurRadius: 20,
                                     spreadRadius: 5,
                                   ),
@@ -316,7 +316,7 @@ class _DangerPinWidgetState extends State<_DangerPinWidget> {
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 8,
                   ),
                 ],
@@ -347,7 +347,7 @@ class _DangerPinWidgetState extends State<_DangerPinWidget> {
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: widget.color.withOpacity(0.5),
+                  color: widget.color.withValues(alpha: 0.5),
                   blurRadius: 8,
                   spreadRadius: 1,
                 ),

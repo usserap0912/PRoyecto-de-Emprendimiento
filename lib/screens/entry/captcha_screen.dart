@@ -153,7 +153,7 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                     'Zona ${widget.zone}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -161,7 +161,7 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                     'Demuestra que eres un vecino real',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -189,7 +189,7 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: const Icon(
@@ -218,9 +218,9 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppTheme.dangerRed.withOpacity(0.1),
+                            color: AppTheme.dangerRed.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.dangerRed.withOpacity(0.3)),
+                            border: Border.all(color: AppTheme.dangerRed.withValues(alpha: 0.3)),
                           ),
                           child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -238,9 +238,9 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppTheme.safeGreen.withOpacity(0.1),
+                            color: AppTheme.safeGreen.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.safeGreen.withOpacity(0.3)),
+                            border: Border.all(color: AppTheme.safeGreen.withValues(alpha: 0.3)),
                           ),
                           child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -288,7 +288,7 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
+                                      color: Colors.black.withValues(alpha: 0.05),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
