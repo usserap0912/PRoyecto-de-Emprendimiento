@@ -123,13 +123,13 @@ class _CaptchaScreenState extends State<CaptchaScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header con logo y colores rojos
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppTheme.primaryGreen, AppTheme.primaryDark],
+                  colors: [AppTheme.brandRedDark, AppTheme.brandRedBright],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -140,15 +140,40 @@ class _CaptchaScreenState extends State<CaptchaScreen>
               ),
               child: Column(
                 children: [
+                  // Logo pequeño
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Image.asset(
+                      'assets/icons/logo-app.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.shield,
+                          size: 32,
+                          color: Colors.white,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
                     '🛡️ Verificación',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     'Zona ${widget.zone}',
                     style: TextStyle(
@@ -161,13 +186,13 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                     'Demuestra que eres un vecino real',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Colors.white.withValues(alpha: 0.65),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
             // Challenge card
             if (_challengeText != null)
               Expanded(
@@ -189,13 +214,13 @@ class _CaptchaScreenState extends State<CaptchaScreen>
                                 Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.primaryGreen.withValues(alpha: 0.1),
+                                    color: AppTheme.brandRedBright.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: const Icon(
                                     Icons.psychology_outlined,
                                     size: 40,
-                                    color: AppTheme.primaryGreen,
+                                    color: AppTheme.brandRedBright,
                                   ),
                                 ),
                                 const SizedBox(height: 20),

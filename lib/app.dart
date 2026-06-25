@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
-import 'package:safezone/screens/entry/zone_selection_screen.dart';
+import 'package:safezone/screens/splash/splash_screen.dart';
 
 class SafeZoneApp extends StatefulWidget {
   const SafeZoneApp({super.key});
@@ -62,7 +62,7 @@ class SafeZoneAppState extends State<SafeZoneApp> {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _themeMode,
-      home: const ZoneSelectionScreen(),
+      home: const SplashScreen(),
     );
   }
 }

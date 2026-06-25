@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Brand colors (shared between themes)
-  static const Color primaryGreen = Color(0xFF2E7D32);
-  static const Color primaryDark = Color(0xFF1B5E20);
-  static const Color primaryLight = Color(0xFF4CAF50);
+  // Brand colors (shared between themes) — USUARIO: #740A03 y #C3110C
+  static const Color primaryGreen = Color(0xFFC3110C);
+  static const Color primaryDark = Color(0xFF740A03);
+  static const Color primaryLight = Color(0xFFE53935);
 
   // Alert tag colors
   static const Color dangerRed = Color(0xFFD32F2F);
@@ -19,6 +19,10 @@ class AppTheme {
   // SOS colors
   static const Color sosRed = Color(0xFFB71C1C);
   static const Color sosDarkRed = Color(0xFF8B0000);
+
+  // Brand reds (usuario)
+  static const Color brandRedDark = Color(0xFF740A03);
+  static const Color brandRedBright = Color(0xFFC3110C);
 
   // Dark theme specific
   static const Color darkBg = Color(0xFF121212);
