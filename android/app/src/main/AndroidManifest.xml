@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 🌐 PERMISO OBLIGATORIO: Permite a SafeZone descargar el mapa de Collique desde internet -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="safezone"
         android:name="${applicationName}"
