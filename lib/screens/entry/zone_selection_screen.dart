@@ -12,31 +12,22 @@ class ZoneSelectionScreen extends StatefulWidget {
 class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
   int? _selectedZone;
 
-  final List<Map<String, dynamic>> _zones = List.generate(7, (index) {
-    final zoneNum = index + 1;
-    final descriptions = [
-      'Av. Revolución - Sector residencial',
-      'Mercado Collique - Zona comercial',
-      'Parque Central - Zona cívica',
-      'Los Olivos - Sector familiar',
-      'Av. Collique - Vía principal',
-      'Nuevo Collique - Urbanización',
-      'Alto Collique - Zona alta',
-    ];
-    return {
-      'number': zoneNum,
-      'description': descriptions[index],
-      'icon': [
-        Icons.location_city,
-        Icons.store,
-        Icons.park,
-        Icons.home,
-        Icons.route,
-        Icons.apartment,
-        Icons.landscape,
-      ][index],
-    };
-  });
+  final List<Map<String, dynamic>> _zones = [
+    {'number': 1, 'label': '1era Zona', 'icon': Icons.location_city},
+    {'number': 2, 'label': '2da Zona', 'icon': Icons.store},
+    {'number': 3, 'label': '3ra Zona', 'icon': Icons.park},
+    {'number': 4, 'label': '4ta Zona', 'icon': Icons.home},
+    {'number': 5, 'label': '5ta Zona', 'icon': Icons.route},
+    {'number': 6, 'label': '6ta Zona', 'icon': Icons.apartment},
+    {'number': 7, 'label': '7ma Zona', 'icon': Icons.landscape},
+    {'number': 8, 'label': '8va Zona', 'icon': Icons.location_on},
+    {'number': 9, 'label': '9na Zona', 'icon': Icons.layers},
+    {'number': 10, 'label': '10ma Zona', 'icon': Icons.map},
+    {'number': 11, 'label': '11va Zona', 'icon': Icons.terrain},
+    {'number': 12, 'label': '12va Zona', 'icon': Icons.explore},
+    {'number': 13, 'label': '13va Zona', 'icon': Icons.near_me},
+    {'number': 14, 'label': '14va Zona / Sector 14', 'icon': Icons.flag},
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +35,7 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header con logo oficial
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
@@ -61,19 +52,31 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
               ),
               child: Column(
                 children: [
+                  // Logo oficial de la app
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    width: 88,
+                    height: 88,
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.shield_outlined,
-                      size: 48,
-                      color: Colors.white,
+                    child: Image.asset(
+                      'assets/icons/logo-app.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.shield,
+                          size: 40,
+                          color: Colors.white,
+                        );
+                      },
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   const Text(
                     'SafeZone',
                     style: TextStyle(
@@ -153,34 +156,21 @@ class _ZoneSelectionScreenState extends State<ZoneSelectionScreen> {
                           children: [
                             Icon(
                               zone['icon'] as IconData,
-                              size: 32,
+                              size: 28,
                               color: isSelected
                                   ? AppTheme.primaryGreen
                                   : Colors.grey[400],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
-                              'Zona $zoneNum',
+                              zone['label'] as String,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: isSelected
                                     ? AppTheme.primaryGreen
                                     : Colors.grey[700],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                zone['description'] as String,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[500],
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],

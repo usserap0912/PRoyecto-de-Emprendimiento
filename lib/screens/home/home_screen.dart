@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
-import 'package:safezone/screens/wall/feed_screen.dart';
+import 'package:safezone/screens/wall/wall_screen.dart';
 import 'package:safezone/screens/map/risk_map_screen.dart';
 import 'package:safezone/screens/sos/sos_screen.dart';
 import 'package:safezone/screens/chat/community_chat_screen.dart';
 import 'package:safezone/screens/report/report_form_screen.dart';
+import 'package:safezone/screens/games/games_hub_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userCode;
@@ -29,7 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _screens = [
-      FeedScreen(userCode: widget.userCode, zone: widget.zone),
+      WallScreen(userCode: widget.userCode, zone: widget.zone),
+      GamesHubScreen(userCode: widget.userCode, zone: widget.zone),
       RiskMapScreen(userCode: widget.userCode),
       SosScreen(userCode: widget.userCode, zone: widget.zone),
       CommunityChatScreen(userCode: widget.userCode),
@@ -62,13 +64,18 @@ class _HomeScreenState extends State<HomeScreen> {
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.white,
           elevation: 0,
-          selectedFontSize: 12,
-          unselectedFontSize: 11,
+          selectedFontSize: 11,
+          unselectedFontSize: 10,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.newspaper_outlined),
               activeIcon: Icon(Icons.newspaper),
               label: 'Muro',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sports_esports_outlined),
+              activeIcon: Icon(Icons.sports_esports),
+              label: 'Juegos',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.map_outlined),

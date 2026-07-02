@@ -16,17 +16,19 @@ class CodeAssignmentScreen extends StatefulWidget {
 
 class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
     with SingleTickerProviderStateMixin {
-  late String _userCode;
+  // Inicializamos con un valor por defecto para evitar el parpadeo
+  String _userCode = '';
+  String _displayCode = '--------';
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
   final SupabaseService _supabase = SupabaseService();
   bool _isSaving = false;
+  bool _isReady = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeUserCode();
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -37,24 +39,39 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
     _scaleAnim = Tween<double>(begin: 0.5, end: 1).animate(
       CurvedAnimation(parent: _animController, curve: Curves.elasticOut),
     );
-    _animController.forward();
+
+    // Cargar o generar código inmediatamente
+    _initializeUserCode();
   }
 
   Future<void> _initializeUserCode() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedCode = prefs.getString('user_code');
-    final savedZone = prefs.getInt('user_zone');
 
-    // Si ya tiene un código guardado para esta zona, lo reusamos
-    if (savedCode != null && savedZone == widget.zone) {
-      _userCode = savedCode;
+    // Buscar código existente bajo la clave 'user_device_code'
+    final existingCode = prefs.getString('user_device_code');
+
+    if (existingCode != null) {
+      // Ya existe un código para este dispositivo → reutilizarlo
+      _userCode = existingCode;
+      // También actualizar la zona guardada
+      await prefs.setInt('user_zone', widget.zone);
     } else {
+      // Primera vez en este dispositivo → generar código único
       _userCode = _generateCode();
-      await prefs.setString('user_code', _userCode);
+      await prefs.setString('user_device_code', _userCode);
       await prefs.setInt('user_zone', widget.zone);
     }
 
-    // Guardar perfil en Supabase (no bloquea, continua en background)
+    if (!mounted) return;
+
+    // Mostrar el código y la animación
+    setState(() {
+      _displayCode = _userCode;
+      _isReady = true;
+    });
+    _animController.forward();
+
+    // Guardar perfil en Supabase (en background)
     _saveProfileToSupabase();
   }
 
@@ -98,8 +115,10 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Fondo definido desde el inicio para evitar parpadeo
       body: Container(
         width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppTheme.primaryGreen, AppTheme.primaryDark],
@@ -112,26 +131,39 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(flex: 2),
-              // Shield icon
+
+              // Logo oficial de la app en la parte superior central
               FadeTransition(
                 opacity: _fadeAnim,
                 child: ScaleTransition(
                   scale: _scaleAnim,
                   child: Container(
-                    padding: const EdgeInsets.all(24),
+                    width: 100,
+                    height: 100,
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.shield,
-                      size: 72,
-                      color: Colors.white,
+                    child: Image.asset(
+                      'assets/icons/logo-app.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.shield,
+                          size: 48,
+                          color: Colors.white,
+                        );
+                      },
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+
               FadeTransition(
                 opacity: _fadeAnim,
                 child: Column(
@@ -153,6 +185,8 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                       ),
                     ),
                     const SizedBox(height: 40),
+
+                    // Tarjeta del código
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 32),
                       padding: const EdgeInsets.symmetric(
@@ -176,14 +210,20 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            _userCode,
-                            style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 3,
-                            ),
+                          // Mostrar placeholder o código real
+                          AnimatedBuilder(
+                            animation: _animController,
+                            builder: (context, child) {
+                              return Text(
+                                _displayCode,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 3,
+                                ),
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
                           Container(
@@ -192,7 +232,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.2),
+                              color: Colors.white.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Row(
@@ -201,14 +241,14 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                                 Icon(
                                   Icons.visibility_off,
                                   size: 16,
-                                  color: Colors.amber,
+                                  color: Colors.white70,
                                 ),
                                 SizedBox(width: 8),
                                 Text(
                                   'Tu identidad es anónima',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.amber,
+                                    color: Colors.white70,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -219,6 +259,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
+
                     if (_isSaving)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -229,7 +270,8 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white.withValues(alpha: 0.7)),
+                                Colors.white.withValues(alpha: 0.7),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -258,18 +300,21 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                   ],
                 ),
               ),
+
               const Spacer(flex: 2),
-              // Enter button
+
+              // Botón de ingreso
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: SizedBox(
                   width: double.infinity,
                   height: 60,
                   child: ElevatedButton(
-                    onPressed: _enterApp,
+                    onPressed: _isReady ? _enterApp : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: AppTheme.primaryGreen,
+                      disabledBackgroundColor: Colors.white.withValues(alpha: 0.3),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),

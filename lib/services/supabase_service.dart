@@ -25,6 +25,7 @@ class SupabaseService {
   String get reactionsTable => 'reactions';
   String get chatMessagesTable => 'chat_messages';
   String get sosAlertsTable => 'sos_alerts';
+  String get userScoresTable => 'user_scores';
 
   // ============================================================
   // PERFILES
