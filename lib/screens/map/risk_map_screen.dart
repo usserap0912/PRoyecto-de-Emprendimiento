@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:safezone/theme/app_theme.dart';
+import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/location_service.dart';
 import 'package:safezone/screens/games/games_hub_screen.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 class RiskMapScreen extends StatefulWidget {
   final String userCode;
@@ -14,59 +18,22 @@ class RiskMapScreen extends StatefulWidget {
   State<RiskMapScreen> createState() => _RiskMapScreenState();
 }
 
-class _RiskMapScreenState extends State<RiskMapScreen>
-    with SingleTickerProviderStateMixin {
-  bool _walkWithMe = false;
+class _RiskMapScreenState extends State<RiskMapScreen> {
   bool _useDarkStyle = false;
-
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnim;
+  final SupabaseService _supabase = SupabaseService();
   final MapController _mapController = MapController();
+  // Reportes en tiempo real
+  List<Map<String, dynamic>> _reports = [];
+  RealtimeChannel? _realtimeChannel;
+  bool _isLoading = true;
 
-  // Límites estrictos para las 14 zonas de Collique
+  // Límites de Collique
   static final LatLngBounds _colliqueBounds = LatLngBounds(
-    const LatLng(-11.949, -77.090), // Suroeste (zona 14)
-    const LatLng(-11.924, -77.064), // Noreste (zona 1 / Museo)
+    const LatLng(-11.949, -77.090),
+    const LatLng(-11.918, -77.025),
   );
 
-  // Puntos de referencia reales en Collique
-  static const _Landmark hospital = _Landmark(
-    name: 'Hospital Sergio Bernales',
-    lat: -11.9312, lng: -77.0698,
-    icon: Icons.local_hospital,
-    color: Color(0xFFE53935),
-    description: 'Principal centro de salud de Collique, atiende emergencias 24h.',
-  );
-
-  static const _Landmark comisaria = _Landmark(
-    name: 'Comisaría de Collique',
-    lat: -11.9335, lng: -77.0730,
-    icon: Icons.local_police,
-    color: Color(0xFF1565C0),
-    description: 'Comisaría sectorial al servicio de las zonas de Collique.',
-  );
-
-  static const _Landmark museo = _Landmark(
-    name: 'Museo de los Colli',
-    lat: -11.9265, lng: -77.0665,
-    icon: Icons.museum,
-    color: Color(0xFFF9A825),
-    description: 'Fortaleza y sitio arqueológico de la Cultura Colli.',
-  );
-
-  // Puntos de peligro en Collique
-  final List<_DangerPin> _dangerPins = [
-    _DangerPin(lat: -11.9320, lng: -77.0730, title: '🚨 Zona de Riesgo - 3ra Zona', description: 'Reportes de robos frecuentes en horas nocturnas.', severity: 3),
-    _DangerPin(lat: -11.9380, lng: -77.0795, title: '⚠️ Falta de Alumbrado - Zona 9', description: 'Pasajes oscuros en sector alto.', severity: 2),
-    _DangerPin(lat: -11.9415, lng: -77.0825, title: '🔴 Riesgo Alto - Zona 11', description: 'Zona alta con merodeo sospechoso.', severity: 3),
-    _DangerPin(lat: -11.9445, lng: -77.0850, title: '⚠️ Precaución - Zona 14', description: 'Sector alto. Circular en grupo recomendado.', severity: 2),
-    _DangerPin(lat: -11.9295, lng: -77.0695, title: '✅ Zona Segura - 1ra Zona', description: 'Serenazgo patrulla cada 30 min.', severity: 1),
-    _DangerPin(lat: -11.9350, lng: -77.0750, title: '✅ Zona Vigilada - 4ta Zona', description: 'Cámaras vecinales activas.', severity: 1),
-    _DangerPin(lat: -11.9365, lng: -77.0785, title: '⚠️ Precaución - Zona 8', description: 'Moto reportada merodeando.', severity: 2),
-    _DangerPin(lat: -11.9430, lng: -77.0838, title: '🔴 Riesgo Alto - Zona 13', description: 'Zona alta, poca iluminación.', severity: 3),
-  ];
-
-  // URLs CartoDB para los estilos
+  // URLs CartoDB
   static const String _cartoDbPositronUrl =
       'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
   static const String _cartoDbDarkUrl =
@@ -75,31 +42,391 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   String get _currentTileUrl =>
       _useDarkStyle ? _cartoDbDarkUrl : _cartoDbPositronUrl;
 
+  // ================================================================
+  // INICIALIZACIÓN
+  // ================================================================
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+    timeago.setLocaleMessages('es', timeago.EsMessages());
+    _cargarReportes();
+    _suscribirRealtime();
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _realtimeChannel?.unsubscribe();
     _mapController.dispose();
     super.dispose();
   }
 
-  Color _getSeverityColor(int severity) {
-    switch (severity) {
-      case 3: return AppTheme.dangerRed;
-      case 2: return AppTheme.warningYellow;
-      case 1: return AppTheme.safeGreen;
-      default: return Colors.grey;
+  // ================================================================
+  // SUPABASE: CARGAR REPORTES + REALTIME
+  // ================================================================
+  Future<void> _cargarReportes() async {
+    try {
+      final data = await _supabase.client
+          .from('reports')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(100);
+
+      if (mounted) {
+        setState(() {
+          _reports = List<Map<String, dynamic>>.from(data);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando reportes: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _suscribirRealtime() {
+    try {
+      // Escuchar INSERT en la tabla 'reports' usando Realtime
+      _realtimeChannel = _supabase.client
+          .channel('reports-realtime')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'reports',
+            callback: (payload) {
+              if (!mounted) return;
+              final newRecord = Map<String, dynamic>.from(payload.newRecord);
+              setState(() {
+                _reports.insert(0, newRecord);
+                if (_reports.length > 100) _reports.removeLast();
+              });
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('Error suscribiendo a Realtime: $e');
+    }
+  }
+
+  // ================================================================
+  // COLOR SEGÚN RISK LEVEL
+  // ================================================================
+  Color _colorPorRiskLevel(String? riskLevel) {
+    switch (riskLevel) {
+      case 'baja':
+        return AppTheme.safeGreen;
+      case 'media':
+        return AppTheme.warningYellow;
+      case 'alta':
+        return AppTheme.alertOrange;
+      case 'critica':
+        return AppTheme.dangerRed;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // ================================================================
+  // CONSTRUIR MARCADORES
+  // ================================================================
+  List<Marker> _construirMarcadores() {
+    return _reports.map((report) {
+      final lat = (report['lat'] ?? report['latitude']) as num?;
+      final lng = (report['lng'] ?? report['longitude']) as num?;
+      if (lat == null || lng == null) {
+        return Marker(
+          point: const LatLng(0, 0),
+          width: 0,
+          height: 0,
+          child: const SizedBox.shrink(),
+        );
+      }
+
+      final riskLevel = report['risk_level'] as String?;
+      final color = _colorPorRiskLevel(riskLevel);
+
+      return Marker(
+        point: LatLng(lat.toDouble(), lng.toDouble()),
+        width: 40,
+        height: 40,
+        child: GestureDetector(
+          onTap: () => _mostrarBottomSheet(report),
+          child: _MarkerPin(color: color, riskLevel: riskLevel),
+        ),
+      );
+    }).toList();
+  }
+
+  // ================================================================
+  // BOTTOM SHEET DE DETALLE
+  // ================================================================
+  void _mostrarBottomSheet(Map<String, dynamic> report) {
+    final zoneNumber = report['zone_number'] ?? report['zone'];
+    final riskLevel = report['risk_level'] as String? ?? 'baja';
+    final category = report['category'] as String? ?? 'otros';
+    final description = report['description'] as String? ?? '';
+    final mediaUrl = report['media_url'] as String?;
+    final createdAtStr = report['created_at'] as String?;
+    final createdAt = createdAtStr != null
+        ? DateTime.tryParse(createdAtStr)
+        : null;
+    final timeAgoText = createdAt != null
+        ? timeago.format(createdAt, locale: 'es')
+        : 'Desconocido';
+
+    final color = _colorPorRiskLevel(riskLevel);
+    // Usar import de Report model cuando se necesiten helpers de categoría
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final bgColor = isDark ? const Color(0xFF1E1E3E) : Colors.white;
+
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+
+                // Título
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: color, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Reporte en Zona $zoneNumber',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Imagen (si existe)
+                if (mediaUrl != null && mediaUrl.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      height: 200,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          mediaUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey.withValues(alpha: 0.1),
+                              child: const Center(
+                                child: Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                              ),
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey.withValues(alpha: 0.05),
+                              child: const Center(
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Badges: Categoría + Riesgo
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      // Badge Categoría
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1565C0).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFF1565C0).withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_categoryIconFor(category), size: 14, color: const Color(0xFF1565C0)),
+                            const SizedBox(width: 6),
+                            Text(
+                              _categoryLabelFor(category),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1565C0)),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Badge Riesgo
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: color.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 14, color: color),
+                            const SizedBox(width: 6),
+                            Text(
+                              _labelRiesgo(riskLevel),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Badge tiempo
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.access_time, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                            const SizedBox(width: 6),
+                            Text(
+                              timeAgoText,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? Colors.white54 : Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Descripción
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+
+                // Botón de acción
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        debugPrint('Confirmar reporte $zoneNumber como real');
+                      },
+                      icon: const Icon(Icons.shield, size: 18),
+                      label: const Text(
+                        'Confirmar que es real 🛡️',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.safeGreen,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _labelRiesgo(String riskLevel) {
+    switch (riskLevel) {
+      case 'baja': return 'Baja';
+      case 'media': return 'Media';
+      case 'alta': return 'Alta';
+      case 'critica': return 'Crítica';
+      default: return riskLevel;
+    }
+  }
+
+  String _categoryLabelFor(String category) {
+    switch (category) {
+      case 'robo': return 'Robo';
+      case 'sospechoso': return 'Sospechoso';
+      case 'extorsion': return 'Extorsión';
+      case 'alumbrado': return 'Alumbrado';
+      default: return 'Otros';
+    }
+  }
+
+  IconData _categoryIconFor(String category) {
+    switch (category) {
+      case 'robo': return Icons.visibility_off;
+      case 'sospechoso': return Icons.person_search;
+      case 'extorsion': return Icons.block;
+      case 'alumbrado': return Icons.lightbulb_outline;
+      default: return Icons.info_outline;
     }
   }
 
@@ -109,10 +436,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GamesHubScreen(
-          userCode: widget.userCode,
-          zone: 0,
-        ),
+        builder: (_) => GamesHubScreen(userCode: widget.userCode, zone: 0),
       ),
     );
   }
@@ -123,41 +447,47 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mapa de Collique'),
+        title: const Text('Mapa de Riesgo - Collique'),
+        centerTitle: true,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppTheme.brandRedDark, AppTheme.brandRedBright],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         actions: [
-          // Walk With Me button
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (context, child) {
-              return GestureDetector(
-                onTap: () => setState(() => _walkWithMe = !_walkWithMe),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                ),
+              ),
+            ),
+          if (!_isLoading)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
                 child: Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _walkWithMe ? Colors.greenAccent.withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(
-                      color: _walkWithMe ? Colors.greenAccent : Colors.white.withValues(alpha: 0.3),
-                      width: 2,
-                    ),
-                    boxShadow: _walkWithMe ? [BoxShadow(color: Colors.greenAccent.withValues(alpha: 0.5), blurRadius: 15, spreadRadius: _pulseAnim.value * 3)] : null,
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.directions_walk, size: 16, color: _walkWithMe ? Colors.black87 : Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        _walkWithMe ? 'Camino Contigo' : 'Camina Conmigo',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _walkWithMe ? Colors.black87 : Colors.white),
-                      ),
-                    ],
+                  child: Text(
+                    '${_reports.length} reportes',
+                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
         ],
       ),
       body: Stack(
@@ -166,81 +496,92 @@ class _RiskMapScreenState extends State<RiskMapScreen>
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: const LatLng(-11.9325, -77.0734),
-              initialZoom: 15.0,
-              minZoom: 14.5,
+              initialCenter: const LatLng(-11.9330, -77.0450),
+              initialZoom: 14.5,
+              minZoom: 13.0,
               maxZoom: 17.0,
-              cameraConstraint: CameraConstraint.contain(
-                bounds: _colliqueBounds,
-              ),
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all,
-              ),
+              cameraConstraint: CameraConstraint.contain(bounds: _colliqueBounds),
+              interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
             ),
             children: [
-              // TileLayer con CartoDB
               TileLayer(
                 urlTemplate: _currentTileUrl,
                 userAgentPackageName: 'com.safezone.app',
               ),
 
-              // === MARCADORES DE ZONAS (1-14) ===
-              MarkerLayer(
-                markers: [
-                  for (int i = 1; i <= 14; i++)
-                    _buildZoneMarker(i, isDark),
-                ],
+              // Marcadores agrupados con clustering
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 60,
+                  size: const Size(40, 40),
+                  markers: _construirMarcadores(),
+                  polygonOptions: const PolygonOptions(
+                    borderColor: Colors.transparent,
+                    color: Colors.transparent,
+                  ),
+                  builder: (context, markers) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppTheme.primaryGreen, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primaryGreen.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          markers.length.toString(),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryGreen,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
 
-              // === MARCADORES DE PUNTOS DE REFERENCIA ===
+              // Zonas de Collique (1-14)
               MarkerLayer(
-                markers: [
-                  _buildLandmarkMarker(hospital),
-                  _buildLandmarkMarker(comisaria),
-                  _buildLandmarkMarker(museo),
-                ],
-              ),
-
-              // === MARCADORES DE PELIGRO ===
-              MarkerLayer(
-                markers: _dangerPins.map((pin) {
+                markers: List.generate(14, (i) {
+                  final coords = LocationService.zoneCoordinates[i + 1];
+                  if (coords == null) {
+                    return Marker(
+                      point: const LatLng(0, 0),
+                      width: 0, height: 0,
+                      child: const SizedBox.shrink(),
+                    );
+                  }
                   return Marker(
-                    point: LatLng(pin.lat, pin.lng),
-                    width: 100,
-                    height: 45,
-                    child: _DangerPinWidget(pin: pin, color: _getSeverityColor(pin.severity)),
-                  );
-                }).toList(),
-              ),
-
-              // === MARCADOR DE "WALK WITH ME" ===
-              if (_walkWithMe)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: LatLng(LocationService.colliqueLat + 0.002, LocationService.colliqueLng + 0.001),
-                      width: 80,
-                      height: 80,
-                      child: AnimatedBuilder(
-                        animation: _pulseAnim,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _pulseAnim.value,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.greenAccent.withValues(alpha: 0.4),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.greenAccent, width: 3),
-                                boxShadow: [BoxShadow(color: Colors.greenAccent.withValues(alpha: 0.3), blurRadius: 20, spreadRadius: 5)],
-                              ),
-                              child: const Center(child: Icon(Icons.directions_walk, color: Colors.white, size: 30)),
-                            ),
-                          );
-                        },
+                    point: LatLng(coords['lat']!, coords['lng']!),
+                    width: 50,
+                    height: 24,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Z${i + 1}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  );
+                }),
+              ),
             ],
           ),
 
@@ -259,24 +600,19 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   children: [
                     const Text('Leyenda', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
-                    _LegendItem(color: AppTheme.dangerRed, label: 'Peligro Alto'),
-                    const SizedBox(height: 3),
-                    _LegendItem(color: AppTheme.warningYellow, label: 'Precaución'),
-                    const SizedBox(height: 3),
-                    _LegendItem(color: AppTheme.safeGreen, label: 'Zona Segura'),
-                    const SizedBox(height: 3),
-                    _LegendItem(color: const Color(0xFF1565C0), label: 'Comisaría'),
-                    const SizedBox(height: 3),
-                    _LegendItem(color: const Color(0xFFE53935), label: 'Hospital'),
-                    const SizedBox(height: 3),
-                    _LegendItem(color: const Color(0xFFF9A825), label: 'Museo'),
+                    _LegendItem(color: AppTheme.safeGreen, label: 'Baja'),
+                    _LegendItem(color: AppTheme.warningYellow, label: 'Media'),
+                    _LegendItem(color: AppTheme.alertOrange, label: 'Alta'),
+                    _LegendItem(color: AppTheme.dangerRed, label: 'Crítica'),
+                    const Divider(height: 12),
+                    _LegendItem(color: AppTheme.primaryGreen, label: 'Cluster'),
                   ],
                 ),
               ),
             ),
           ),
 
-          // === BOTÓN FLOTANTE: ESTILO DE MAPA ===
+          // === BOTÓN ESTILO MAPA ===
           Positioned(
             right: 16,
             top: 16,
@@ -293,7 +629,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     size: 22,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -309,7 +645,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
             ),
           ),
 
-          // === BOTÓN FLOTANTE: IR A JUEGOS ===
+          // === BOTÓN JUEGOS ===
           Positioned(
             right: 16,
             bottom: 24,
@@ -334,253 +670,78 @@ class _RiskMapScreenState extends State<RiskMapScreen>
               ],
             ),
           ),
+
+          // === CARGA INICIAL ===
+          if (_isLoading)
+            Container(
+              color: Colors.black.withValues(alpha: 0.2),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
         ],
       ),
     );
   }
+}
 
-  Marker _buildZoneMarker(int zoneNumber, bool isDark) {
-    final coords = LocationService.zoneCoordinates[zoneNumber];
-    if (coords == null) {
-      return Marker(point: LatLng(0, 0), width: 0, height: 0, child: const SizedBox.shrink());
+// ================================================================
+// WIDGET: PIN DEL MARCADOR CON COLOR
+// ================================================================
+class _MarkerPin extends StatelessWidget {
+  final Color color;
+  final String? riskLevel;
+
+  const _MarkerPin({required this.color, this.riskLevel});
+
+  @override
+  Widget build(BuildContext context) {
+    IconData icon;
+    switch (riskLevel) {
+      case 'critica': icon = Icons.warning; break;
+      case 'alta': icon = Icons.warning_amber_rounded; break;
+      case 'media': icon = Icons.info; break;
+      default: icon = Icons.check_circle;
     }
 
-    return Marker(
-      point: LatLng(coords['lat']!, coords['lng']!),
-      width: 60,
-      height: 30,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.3),
-            width: 0.5,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.5),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 16),
+        ),
+        // Pin pointer
+        Container(
+          width: 0,
+          height: 0,
+          margin: const EdgeInsets.only(top: -1),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: Colors.transparent, width: 6),
+              right: BorderSide(color: Colors.transparent, width: 6),
+              top: BorderSide(color: color, width: 8),
+            ),
           ),
         ),
-        child: Text(
-          'Z$zoneNumber',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
-        ),
-      ),
-    );
-  }
-
-  Marker _buildLandmarkMarker(_Landmark landmark) {
-    return Marker(
-      point: LatLng(landmark.lat, landmark.lng),
-      width: 120,
-      height: 60,
-      child: _LandmarkWidget(
-        name: landmark.name,
-        icon: landmark.icon,
-        color: landmark.color,
-        description: landmark.description,
-      ),
+      ],
     );
   }
 }
 
-// ============================================================
-// Modelos
-// ============================================================
-
-class _Landmark {
-  final String name;
-  final double lat;
-  final double lng;
-  final IconData icon;
-  final Color color;
-  final String description;
-  const _Landmark({
-    required this.name,
-    required this.lat,
-    required this.lng,
-    required this.icon,
-    required this.color,
-    required this.description,
-  });
-}
-
-class _DangerPin {
-  final double lat;
-  final double lng;
-  final String title;
-  final String description;
-  final int severity;
-  _DangerPin({
-    required this.lat,
-    required this.lng,
-    required this.title,
-    required this.description,
-    required this.severity,
-  });
-}
-
-// ============================================================
-// Widgets
-// ============================================================
-
-/// Marcador interactivo de punto de referencia
-class _LandmarkWidget extends StatefulWidget {
-  final String name;
-  final IconData icon;
-  final Color color;
-  final String description;
-  const _LandmarkWidget({
-    required this.name,
-    required this.icon,
-    required this.color,
-    required this.description,
-  });
-
-  @override
-  State<_LandmarkWidget> createState() => _LandmarkWidgetState();
-}
-
-class _LandmarkWidgetState extends State<_LandmarkWidget>
-    with SingleTickerProviderStateMixin {
-  bool _showInfo = false;
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.9, end: 1.1).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => setState(() => _showInfo = !_showInfo),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_showInfo)
-            Container(
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                  const SizedBox(height: 4),
-                  Text(widget.description, style: TextStyle(fontSize: 9, color: Colors.grey[600]), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _showInfo ? 1.15 : _pulseAnim.value,
-                child: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: widget.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
-                    boxShadow: [BoxShadow(color: widget.color.withValues(alpha: 0.5), blurRadius: 10, spreadRadius: 2)],
-                  ),
-                  child: Icon(widget.icon, size: 22, color: Colors.white),
-                ),
-              );
-            },
-          ),
-          Container(
-            margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(6)),
-            child: Text(
-              widget.name,
-              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Colors.white),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Marcador interactivo de punto de peligro
-class _DangerPinWidget extends StatefulWidget {
-  final _DangerPin pin;
-  final Color color;
-  const _DangerPinWidget({required this.pin, required this.color});
-
-  @override
-  State<_DangerPinWidget> createState() => _DangerPinWidgetState();
-}
-
-class _DangerPinWidgetState extends State<_DangerPinWidget> {
-  bool _showInfo = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => setState(() => _showInfo = !_showInfo),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_showInfo)
-            Container(
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(widget.pin.title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  Text(widget.pin.description, style: TextStyle(fontSize: 10, color: Colors.grey[600]), textAlign: TextAlign.center),
-                ],
-              ),
-            ),
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: widget.color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [BoxShadow(color: widget.color.withValues(alpha: 0.5), blurRadius: 8, spreadRadius: 1)],
-            ),
-            child: Icon(
-              widget.pin.severity == 3 ? Icons.warning : widget.pin.severity == 2 ? Icons.info_outline : Icons.check,
-              color: Colors.white,
-              size: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+// ================================================================
+// WIDGET: ITEM DE LEYENDA
+// ================================================================
 class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
@@ -588,13 +749,20 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 10)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 10)),
+        ],
+      ),
     );
   }
 }
