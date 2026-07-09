@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
@@ -76,4 +77,85 @@ class LocationService {
   static const double comisariaLng = -77.0730;
   static const double museoLat = -11.9265;
   static const double museoLng = -77.0665;
+
+  /// Comisarías y puntos policiales cercanos a Collique, Comas
+  static List<Map<String, dynamic>> get policeStations => [
+    {
+      'name': 'Comisaría de Collique',
+      'lat': -11.9335,
+      'lng': -77.0730,
+      'type': 'comisaria',
+    },
+    {
+      'name': 'Comisaría de Santa Luzmila',
+      'lat': -11.9380,
+      'lng': -77.0590,
+      'type': 'comisaria',
+    },
+    {
+      'name': 'Comisaría de La Pascana',
+      'lat': -11.9450,
+      'lng': -77.0430,
+      'type': 'comisaria',
+    },
+    {
+      'name': 'Puesto Policial - Av. Túpac Amaru',
+      'lat': -11.9250,
+      'lng': -77.0670,
+      'type': 'puesto',
+    },
+    {
+      'name': 'Serenazgo de Collique',
+      'lat': -11.9360,
+      'lng': -77.0760,
+      'type': 'serenazgo',
+    },
+    {
+      'name': 'Comisaría de Comas',
+      'lat': -11.9410,
+      'lng': -77.0650,
+      'type': 'comisaria',
+    },
+    {
+      'name': 'Base Policial - Collique Alto',
+      'lat': -11.9440,
+      'lng': -77.0830,
+      'type': 'puesto',
+    },
+  ];
+
+  // ============================================================
+  // CÁLCULO DE DISTANCIA (Fórmula de Haversine)
+  // ============================================================
+
+  /// Calcula la distancia en metros entre dos puntos geográficos.
+  static double calculateDistance(
+      double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadius = 6371000; // metros
+
+    final double dLat = _degreesToRadians(lat2 - lat1);
+    final double dLon = _degreesToRadians(lon2 - lon1);
+
+    final double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+
+    final double c = 2 * asin(sqrt(a));
+    return earthRadius * c;
+  }
+
+  static double _degreesToRadians(double degrees) {
+    return degrees * (3.141592653589793 / 180);
+  }
+
+  /// Formatea una distancia en metros: "X m" o "X.X km".
+  static String formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    } else {
+      return '${(meters / 1000).toStringAsFixed(1)} km';
+    }
+  }
 }

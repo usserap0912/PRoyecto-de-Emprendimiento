@@ -4,8 +4,8 @@ import 'package:safezone/screens/wall/wall_screen.dart';
 import 'package:safezone/screens/map/risk_map_screen.dart';
 import 'package:safezone/screens/sos/sos_screen.dart';
 import 'package:safezone/screens/chat/community_chat_screen.dart';
+import 'package:safezone/screens/chat/zonebot_screen.dart';
 import 'package:safezone/screens/report/report_form_screen.dart';
-import 'package:safezone/screens/games/games_hub_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userCode;
@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _screens = [
       WallScreen(userCode: widget.userCode, zone: widget.zone),
-      GamesHubScreen(userCode: widget.userCode, zone: widget.zone),
+      ZoneBotScreen(userCode: widget.userCode, zone: widget.zone),
       RiskMapScreen(userCode: widget.userCode),
       SosScreen(userCode: widget.userCode, zone: widget.zone),
       CommunityChatScreen(userCode: widget.userCode),
@@ -73,9 +73,9 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Muro',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.sports_esports_outlined),
-              activeIcon: Icon(Icons.sports_esports),
-              label: 'Juegos',
+              icon: Icon(Icons.shield_outlined),
+              activeIcon: Icon(Icons.shield),
+              label: 'ZoneBot',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.map_outlined),

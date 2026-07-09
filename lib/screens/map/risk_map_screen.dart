@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/location_service.dart';
@@ -22,9 +22,9 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
   bool _useDarkStyle = false;
   final SupabaseService _supabase = SupabaseService();
   final MapController _mapController = MapController();
-  // Reportes en tiempo real
+  // Reportes en tiempo real vía stream de Supabase
   List<Map<String, dynamic>> _reports = [];
-  RealtimeChannel? _realtimeChannel;
+  StreamSubscription<List<Map<String, dynamic>>>? _reportsSubscription;
   bool _isLoading = true;
 
   // Límites de Collique
@@ -49,80 +49,91 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
   void initState() {
     super.initState();
     timeago.setLocaleMessages('es', timeago.EsMessages());
-    _cargarReportes();
-    _suscribirRealtime();
+    _initReportsStream();
   }
 
   @override
   void dispose() {
-    _realtimeChannel?.unsubscribe();
+    _reportsSubscription?.cancel();
     _mapController.dispose();
     super.dispose();
   }
 
   // ================================================================
-  // SUPABASE: CARGAR REPORTES + REALTIME
+  // SUPABASE: STREAM EN VIVO DE REPORTES
   // ================================================================
-  Future<void> _cargarReportes() async {
+  /// Escucha la tabla 'reports' en tiempo real usando el stream nativo de Supabase.
+  /// Se actualiza automáticamente con inserts, updates y deletes.
+  void _initReportsStream() {
     try {
-      final data = await _supabase.client
+      _reportsSubscription = _supabase.client
           .from('reports')
-          .select()
+          .stream(primaryKey: ['id'])
           .order('created_at', ascending: false)
-          .limit(100);
-
-      if (mounted) {
-        setState(() {
-          _reports = List<Map<String, dynamic>>.from(data);
-          _isLoading = false;
-        });
-      }
+          .listen(
+        (List<Map<String, dynamic>> data) {
+          if (mounted) {
+            setState(() {
+              _reports = data;
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (Object error) {
+          debugPrint('Error en stream de reportes: $error');
+          if (mounted) setState(() => _isLoading = false);
+        },
+      );
     } catch (e) {
-      debugPrint('Error cargando reportes: $e');
+      debugPrint('Error iniciando stream de reportes: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _suscribirRealtime() {
-    try {
-      // Escuchar INSERT en la tabla 'reports' usando Realtime
-      _realtimeChannel = _supabase.client
-          .channel('reports-realtime')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'reports',
-            callback: (payload) {
-              if (!mounted) return;
-              final newRecord = Map<String, dynamic>.from(payload.newRecord);
-              setState(() {
-                _reports.insert(0, newRecord);
-                if (_reports.length > 100) _reports.removeLast();
-              });
-            },
-          )
-          .subscribe();
-    } catch (e) {
-      debugPrint('Error suscribiendo a Realtime: $e');
+  // ================================================================
+  // COLOR SEGÚN CATEGORÍA DEL REPORTE
+  // ================================================================
+  Color _colorPorCategoria(String? category) {
+    switch (category) {
+      case 'robo':
+        return const Color(0xFFFF0000); // Rojo
+      case 'sospechoso':
+        return const Color(0xFFFFA500); // Naranja
+      case 'extorsion':
+        return const Color(0xFFFFA500); // Naranja (similar a sospechoso)
+      case 'alumbrado':
+        return const Color(0xFFFFFF00); // Amarillo
+      default:
+        return Colors.grey;
     }
   }
 
   // ================================================================
-  // COLOR SEGÚN RISK LEVEL
+  // COLOR SEGÚN ANTIGÜEDAD DEL REPORTE
   // ================================================================
-  Color _colorPorRiskLevel(String? riskLevel) {
-    switch (riskLevel) {
-      case 'baja':
-        return AppTheme.safeGreen;
-      case 'media':
-        return AppTheme.warningYellow;
-      case 'alta':
-        return AppTheme.alertOrange;
-      case 'critica':
-        return AppTheme.dangerRed;
-      default:
-        return Colors.grey;
+  Color _colorPorAntiguedad(String? createdAtStr) {
+    final createdAt = createdAtStr != null
+        ? DateTime.tryParse(createdAtStr)
+        : null;
+    if (createdAt == null) return Colors.grey;
+
+    final now = DateTime.now();
+    final difference = now.difference(createdAt);
+
+    // 0 a 12 horas → Rojo
+    if (difference.inHours <= 12) {
+      return const Color(0xFFFF0000);
     }
+    // 2 a 6 días → Amarillo
+    if (difference.inDays >= 2 && difference.inDays <= 6) {
+      return const Color(0xFFFFFF00);
+    }
+    // 7 días o más → Azul
+    if (difference.inDays >= 7) {
+      return const Color(0xFF0000FF);
+    }
+    // Entre 12h y 2d → Naranja (transición)
+    return const Color(0xFFFFA500);
   }
 
   // ================================================================
@@ -141,8 +152,9 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
         );
       }
 
-      final riskLevel = report['risk_level'] as String?;
-      final color = _colorPorRiskLevel(riskLevel);
+      // Color por categoría en lugar de risk level
+      final category = report['category'] as String?;
+      final color = _colorPorCategoria(category);
 
       return Marker(
         point: LatLng(lat.toDouble(), lng.toDouble()),
@@ -150,7 +162,7 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
         height: 40,
         child: GestureDetector(
           onTap: () => _mostrarBottomSheet(report),
-          child: _MarkerPin(color: color, riskLevel: riskLevel),
+          child: _MarkerPin(color: color, category: category),
         ),
       );
     }).toList();
@@ -173,8 +185,7 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
         ? timeago.format(createdAt, locale: 'es')
         : 'Desconocido';
 
-    final color = _colorPorRiskLevel(riskLevel);
-    // Usar import de Report model cuando se necesiten helpers de categoría
+    final color = _colorPorCategoria(category);
 
     showModalBottomSheet(
       context: context,
@@ -441,6 +452,136 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
     );
   }
 
+  /// Construye un marcador de POI con ícono y color personalizados.
+  Marker _buildPoiMarker({
+    required double lat,
+    required double lng,
+    required String name,
+    required String type,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    return Marker(
+      point: LatLng(lat, lng),
+      width: 36,
+      height: 36,
+      child: GestureDetector(
+        onTap: () => _mostrarInfoPoi(name, type),
+        child: Container(
+          decoration: BoxDecoration(
+            color: iconColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: [
+              BoxShadow(
+                color: iconColor.withValues(alpha: 0.4),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 18),
+        ),
+      ),
+    );
+  }
+
+  /// Filtra las comisarías por proximidad al centro de Collique (radio ~2 km).
+  /// Ordena por distancia y retorna las más cercanas.
+  List<Marker> _filtrarComisariasCercanas() {
+    // Usar el centro de Collique como referencia de ubicación
+    final refLat = LocationService.colliqueLat;
+    final refLng = LocationService.colliqueLng;
+    const double maxRadiusMeters = 2500; // 2.5 km
+
+    final stations = LocationService.policeStations.where((s) {
+      final lat = s['lat'] as double;
+      final lng = s['lng'] as double;
+      final distance = LocationService.calculateDistance(refLat, refLng, lat, lng);
+      return distance <= maxRadiusMeters;
+    }).toList();
+
+    // Ordenar por distancia (más cercanas primero)
+    stations.sort((a, b) {
+      final distA = LocationService.calculateDistance(
+        refLat, refLng, a['lat'] as double, a['lng'] as double,
+      );
+      final distB = LocationService.calculateDistance(
+        refLat, refLng, b['lat'] as double, b['lng'] as double,
+      );
+      return distA.compareTo(distB);
+    });
+
+    return stations.map((station) {
+      final lat = station['lat'] as double;
+      final lng = station['lng'] as double;
+      final name = station['name'] as String;
+      final type = station['type'] as String;
+
+      IconData icon;
+      Color iconColor;
+      switch (type) {
+        case 'comisaria':
+          icon = Icons.local_police;
+          iconColor = const Color(0xFF1565C0);
+          break;
+        case 'puesto':
+          icon = Icons.security;
+          iconColor = const Color(0xFF2E7D32);
+          break;
+        case 'serenazgo':
+          icon = Icons.directions_walk;
+          iconColor = const Color(0xFFE65100);
+          break;
+        default:
+          icon = Icons.location_on;
+          iconColor = Colors.blue;
+      }
+
+      return _buildPoiMarker(
+        lat: lat,
+        lng: lng,
+        name: name,
+        type: type,
+        icon: icon,
+        iconColor: iconColor,
+      );
+    }).toList();
+  }
+
+  /// Muestra un SnackBar con información del POI tocado.
+  void _mostrarInfoPoi(String name, String type) {
+    final typeLabel = switch (type) {
+      'comisaria' => 'Comisaría',
+      'puesto'    => 'Puesto Policial',
+      'serenazgo' => 'Serenazgo',
+      _           => 'Punto de seguridad',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.local_police, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(typeLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(name, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -582,10 +723,37 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
                   );
                 }),
               ),
+
+              // === PUNTOS DE INTERÉS (POIs) ===
+              // Hospital, Museo, Comisarías cercanas
+              MarkerLayer(
+                markers: [
+                  // Hospital Sergio Bernales
+                  _buildPoiMarker(
+                    lat: -11.9312,
+                    lng: -77.0698,
+                    name: 'Hospital Sergio Bernales',
+                    type: 'hospital',
+                    icon: Icons.local_hospital,
+                    iconColor: const Color(0xFFE53935),
+                  ),
+                  // Museo de los Colli
+                  _buildPoiMarker(
+                    lat: -11.9265,
+                    lng: -77.0665,
+                    name: 'Museo de los Colli',
+                    type: 'museo',
+                    icon: Icons.museum,
+                    iconColor: const Color(0xFF8D6E63),
+                  ),
+                  // Comisarías y puestos (filtrados por proximidad)
+                  ..._filtrarComisariasCercanas(),
+                ],
+              ),
             ],
           ),
 
-          // === LEYENDA ===
+          // === LEYENDA DE CATEGORÍAS ===
           Positioned(
             left: 12,
             bottom: 80,
@@ -598,14 +766,51 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Leyenda', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    _LegendItem(color: AppTheme.safeGreen, label: 'Baja'),
-                    _LegendItem(color: AppTheme.warningYellow, label: 'Media'),
-                    _LegendItem(color: AppTheme.alertOrange, label: 'Alta'),
-                    _LegendItem(color: AppTheme.dangerRed, label: 'Crítica'),
-                    const Divider(height: 12),
+                    const Text('Categorías', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    _LegendItem(color: const Color(0xFFFF0000), label: 'Robo'),
+                    _LegendItem(color: const Color(0xFFFFA500), label: 'Sospechoso'),
+                    _LegendItem(color: const Color(0xFFFFFF00), label: 'Alumbrado'),
+                    _LegendItem(color: Colors.grey, label: 'Otros'),
+                    const Divider(height: 8),
                     _LegendItem(color: AppTheme.primaryGreen, label: 'Cluster'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // === LEYENDA DE ANTIGÜEDAD (evaluación dinámica) ===
+          Positioned(
+            left: 12,
+            bottom: 210,
+            child: Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Antigüedad', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    _LegendItem(
+                      color: const Color(0xFFFF0000),
+                      label: '0–12 h (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFF0000)).length})',
+                    ),
+                    _LegendItem(
+                      color: const Color(0xFFFFA500),
+                      label: '12h–2d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFA500)).length})',
+                    ),
+                    _LegendItem(
+                      color: const Color(0xFFFFFF00),
+                      label: '2–6 d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFFF00)).length})',
+                    ),
+                    _LegendItem(
+                      color: const Color(0xFF0000FF),
+                      label: '7 d+ (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFF0000FF)).length})',
+                    ),
                   ],
                 ),
               ),
@@ -684,22 +889,32 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
 }
 
 // ================================================================
-// WIDGET: PIN DEL MARCADOR CON COLOR
+// WIDGET: PIN DEL MARCADOR CON COLOR POR CATEGORÍA
 // ================================================================
 class _MarkerPin extends StatelessWidget {
   final Color color;
-  final String? riskLevel;
+  final String? category;
 
-  const _MarkerPin({required this.color, this.riskLevel});
+  const _MarkerPin({required this.color, this.category});
 
   @override
   Widget build(BuildContext context) {
     IconData icon;
-    switch (riskLevel) {
-      case 'critica': icon = Icons.warning; break;
-      case 'alta': icon = Icons.warning_amber_rounded; break;
-      case 'media': icon = Icons.info; break;
-      default: icon = Icons.check_circle;
+    switch (category) {
+      case 'robo':
+        icon = Icons.visibility_off;
+        break;
+      case 'sospechoso':
+        icon = Icons.person_search;
+        break;
+      case 'extorsion':
+        icon = Icons.block;
+        break;
+      case 'alumbrado':
+        icon = Icons.lightbulb_outline;
+        break;
+      default:
+        icon = Icons.info_outline;
     }
 
     return Column(

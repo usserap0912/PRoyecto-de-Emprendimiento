@@ -1,8 +1,16 @@
 # 🛡️ SafeZone
 
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version">
+  <img src="https://img.shields.io/badge/Flutter-3.44+-02569B?style=for-the-badge&logo=flutter&logoColor=white&labelColor=1a1a2e" alt="Flutter">
+  <img src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1a2e" alt="Android">
+  <img src="https://img.shields.io/badge/Web-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white&labelColor=1a1a2e" alt="Web">
+  <img src="https://img.shields.io/badge/license-Open%20Source-brightgreen?style=for-the-badge&labelColor=1a1a2e" alt="License">
+</p>
+
 **Red vecinal de seguridad para Collique, Comas — Lima Norte.**
 
-SafeZone es una aplicación móvil que permite a los vecinos de Collique colaborar en la seguridad de su comunidad mediante reportes anónimos, alertas en tiempo real, un mapa interactivo de las 14 zonas, minijuegos educativos y chat vecinal.
+SafeZone es una aplicación móvil que permite a los vecinos de Collique colaborar en la seguridad de su comunidad mediante reportes anónimos, alertas en tiempo real, un mapa interactivo de las 14 zonas, chat vecinal y más.
 
 ---
 
@@ -10,14 +18,14 @@ SafeZone es una aplicación móvil que permite a los vecinos de Collique colabor
 
 | Módulo | Descripción |
 |--------|-------------|
-| 📰 **Muro en Tiempo Real** | Reportes con video, imágenes, reacciones emoji (🛡️⚠️😮🙏) y comentarios en vivo |
-| 🗺️ **Mapa de Collique** | Mapa OpenStreetMap con CartoDB (claro/oscuro), 14 zonas, POIs, alertas de riesgo |
-| 🎮 **Zona de Juegos** | Trivia de Seguridad Collique + Patrullaje de la Revolución (arcade 2D) |
-| 🆘 **S.O.S.** | Alerta de emergencia con ubicación GPS y cuenta regresiva |
-| 💬 **Chat Vecinal** | Chat anónimo en tiempo real con los vecinos |
-| 📝 **Reportar** | Formulario para reportar incidentes con fotos y videos |
-| 🔐 **Ingreso Seguro** | Captcha vecinal + código único persistente por dispositivo |
-| 🌙 **Modo Oscuro** | Tema claro/oscuro configurable con persistencia |
+| 📰 **Muro en Tiempo Real** | Reportes categorizados con video, imágenes, reacciones emoji (🛡️⚠️😮🙏), comentarios en vivo, filtros temporales y actualización en tiempo real vía Supabase Realtime |
+| 🗺️ **Mapa de Riesgo** | Mapa OpenStreetMap con CartoDB (claro/oscuro), marcadores de reportes con clustering, niveles de riesgo (baja/media/alta/crítica), 14 zonas de Collique, POIs (Hospital, Comisaría, Museo), bottom sheet de detalle |
+| 🆘 **S.O.S.** | Alerta de emergencia con cuenta regresiva de 3s, vibración háptica, envío de ubicación GPS exacta a Supabase, modo offline |
+| 💬 **Chat Vecinal** | Chat anónimo en tiempo real con los vecinos, burbujas diferenciadas (propio/otros), contador de mensajes |
+| 📝 **Reportar** | Formulario para reportar incidentes con fotos, videos, selección de categoría (robo, sospechoso, extorsión, alumbrado, otros) y nivel de riesgo |
+| 👤 **Mi Perfil** | Estadísticas personales (reportes, reacciones, alertas SOS), información del código y zona, toggle de tema claro/oscuro |
+| 🔐 **Ingreso Seguro** | Splash animado con consejos de seguridad → selección de zona (14 zonas) → captcha vecinal → código único permanente por dispositivo |
+| 🌙 **Modo Oscuro** | Tema claro/oscuro configurable con persistencia en SharedPreferences, aplicado globalmente |
 
 ---
 
@@ -26,7 +34,7 @@ SafeZone es una aplicación móvil que permite a los vecinos de Collique colabor
 ### Requisitos
 
 - Flutter 3.38+ ([instalar](https://docs.flutter.dev/get-started/install))
-- Dispositivo Android (físico o emulador)
+- Dispositivo Android (físico o emulador) o navegador web
 - Proyecto Supabase (opcional, la app funciona offline con datos de ejemplo)
 
 ### Pasos
@@ -39,8 +47,10 @@ cd safezone
 # 2. Instalar dependencias
 flutter pub get
 
-# 3. Ejecutar en Android
-flutter run
+# 3. Ejecutar
+flutter run                    # Android
+flutter run -d chrome          # Web
+flutter run -d edge            # Microsoft Edge
 ```
 
 ---
@@ -59,7 +69,7 @@ Ejecuta los scripts SQL en el Editor SQL de Supabase en este orden:
    - `sos_alerts` — Alertas de emergencia
    - RLS policies, índices y triggers para contadores
 
-2. `supabase_migration_games.sql` — Tabla de juegos:
+2. `supabase_migration_games.sql` — Tabla de juegos (opcional):
    - `user_scores` — Puntajes de minijuegos con RLS
    - Funciones `get_user_best_score` y `get_leaderboard`
 
@@ -125,26 +135,25 @@ lib/
 │   │   ├── captcha_screen.dart
 │   │   ├── code_assignment_screen.dart
 │   │   ├── zone_selection_screen.dart
-│   ├── home/                          # Navegación principal (BottomNav)
+│   ├── splash/                        # Splash animado con consejos de seguridad
+│   ├── home/                          # Navegación principal con BottomNavigationBar
 │   ├── wall/                          # Muro de reportes en tiempo real
 │   │   ├── wall_screen.dart
+│   │   ├── feed_screen.dart
 │   │   └── widgets/
 │   │       └── post_card.dart
 │   ├── map/                           # Mapa interactivo de Collique
 │   │   └── risk_map_screen.dart
-│   ├── games/                         # Módulo gamificado
-│   │   ├── games_hub_screen.dart
-│   │   ├── trivia_game_screen.dart
-│   │   └── patrol_game_screen.dart
-│   ├── sos/                           # Alerta SOS
-│   ├── chat/                          # Chat vecinal
-│   ├── report/                        # Formulario de reporte
-│   └── stats/                         # Estadísticas y perfil
+│   ├── sos/                           # Alerta SOS con GPS
+│   ├── chat/                          # Chat vecinal anónimo
+│   ├── report/                        # Formulario de reporte de incidentes
+│   └── stats/                         # Perfil y estadísticas del usuario
 ├── services/                          # Servicios y API
 │   ├── supabase_service.dart
 │   ├── report_service.dart
 │   ├── chat_service.dart
-│   └── location_service.dart
+│   ├── location_service.dart
+│   └── permission_service.dart
 ├── theme/                             # Temas claro/oscuro
 │   └── app_theme.dart
 └── widgets/                           # Widgets compartidos
@@ -157,7 +166,7 @@ lib/
 
 ## 🗺️ Mapa de Collique
 
-El mapa usa **flutter_map** con tiles de **CartoDB** en dos estilos intercambiables:
+El mapa usa **flutter_map** con tiles de **CartoDB** en dos estilos intercambiables y clustering de marcadores:
 
 | Estilo | URL |
 |--------|-----|
@@ -165,39 +174,26 @@ El mapa usa **flutter_map** con tiles de **CartoDB** en dos estilos intercambiab
 | 🌙 Oscuro (Dark Matter) | `https://{s}.basemaps.cartocdn.com/dark_all/...` |
 
 Incluye:
-- **14 zonas** de Collique con marcadores numerados
+- **14 zonas** de Collique con marcadores numerados Z1–Z14
 - **Puntos de referencia**: Hospital Sergio Bernales, Comisaría de Collique, Museo de los Colli
-- **Alertas de riesgo** en zonas altas con códigos de colores
+- **Alertas de riesgo** con códigos de colores (verde/amarillo/naranja/rojo)
+- **Clustering** de marcadores con indicador numérico
 - **Límites de cámara** para no salir del área de Collique
-- **Walk With Me** — Comparte tu ubicación en tiempo real
-
----
-
-## 🎮 Minijuegos
-
-### 🧠 Trivia de Seguridad Collique
-- 15 preguntas sobre prevención de riesgos, números de emergencia y geografía local
-- 3 vidas, sistema de rachas y puntaje por tiempo
-- Animaciones al acertar/fallar con explicaciones
-
-### 🚓 Patrullaje de la Revolución
-- Juego arcade 2D con GameLoop vía AnimationController
-- 4 carriles en la Av. Revolución
-- Esquiva peligros (🔴⚡🔥💀⚠️) y recolecta escudos (🛡️)
-- Velocidad progresiva con puntuación infinita
+- **Bottom sheet de detalle** al tocar un marcador: categoría, nivel de riesgo, tiempo, imagen, descripción
+- **Confirmación comunitaria**: botón "Confirmar que es real 🛡️"
 
 ---
 
 ## 🔐 Flujo de Ingreso
 
 ```
-Splash (4s + consejos) 
-  → ¿Código existe? 
-    → Sí → HomeScreen 
-    → No → Selección de zona (14 zonas)
-      → Captcha vecinal
+Splash animado (4s + consejos aleatorios de seguridad)
+  → ¿Código existe en SharedPreferences?
+    → Sí → HomeScreen directamente
+    → No → Selección de zona (14 zonas de Collique)
+      → Captcha vecinal (3 preguntas de seguridad)
         → Código único permanente (user_device_code)
-          → HomeScreen
+          → HomeScreen con BottomNavigationBar
 ```
 
 El código se guarda en `SharedPreferences` bajo la clave `user_device_code` y es **permanente por dispositivo**. Nunca cambia aunque se cierre la app.
@@ -210,15 +206,17 @@ El código se guarda en `SharedPreferences` bajo la clave `user_device_code` y e
 |------------|-----|
 | **Flutter 3.38+** | Framework de UI multiplataforma |
 | **Dart** | Lenguaje de programación |
-| **Supabase** | Backend: PostgreSQL, Auth, Storage, Realtime |
-| **flutter_map + CartoDB** | Mapas OpenStreetMap con 2 estilos visuales |
+| **Supabase** | Backend: PostgreSQL, Auth anónimo, Storage, Realtime (suscripciones en vivo) |
+| **flutter_map + CartoDB** | Mapas OpenStreetMap con clustering de marcadores |
+| **flutter_map_marker_cluster** | Agrupación de marcadores de reportes |
 | **video_player** | Reproducción de videos de evidencia |
-| **image_picker** | Cámara y galería |
-| **geolocator / geocoding** | GPS y direcciones |
-| **shared_preferences** | Almacenamiento local (código, tema) |
+| **image_picker** | Cámara y galería para reportes |
+| **geolocator / geocoding** | GPS y direcciones para SOS y reportes |
+| **shared_preferences** | Almacenamiento local (código de dispositivo, tema) |
 | **shimmer** | Efectos de carga esqueletales |
 | **timeago** | Fechas relativas en español |
 | **flutter_local_notifications** | Notificaciones push locales |
+| **permission_handler** | Gestión de permisos de cámara, ubicación, notificaciones |
 
 ---
 

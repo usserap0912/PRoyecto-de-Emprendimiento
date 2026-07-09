@@ -1,14 +1,23 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
-            "name": "Dart & Flutter",
+            "name": "SafeZone - Edge",
             "request": "launch",
-            "type": "dart"
+            "type": "dart",
+            "args": [
+                "--dart-define=OPENAI_API_KEY=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"
+            ],
+            "program": "lib/main.dart"
+        },
+        {
+            "name": "SafeZone - Chrome",
+            "request": "launch",
+            "type": "dart",
+            "args": [
+                "--dart-define=OPENAI_API_KEY=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"
+            ],
+            "program": "lib/main.dart"
         }
     ]
 }
