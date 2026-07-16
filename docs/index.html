@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SafeZone - Red Vecinal de Seguridad</title>
+  <meta name="description" content="Descarga SafeZone, la red vecinal de seguridad de Collique, Comas. Reporta incidentes, alerta a tus vecinos y mantén tu comunidad segura." />
+  
+  <!-- Open Graph -->
+  <meta property="og:title" content="SafeZone - Red Vecinal de Seguridad" />
+  <meta property="og:description" content="Protege tu comunidad. Descarga SafeZone para Android." />
+  <meta property="og:image" content="https://kpkdgejbjgmrbyemubmx.supabase.co/storage/v1/object/public/safezone-images/preview/safezone-preview.png" />
+  <meta property="og:url" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/" />
+  
+  <style>
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0d1f3c 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #ffffff;
+      overflow-x: hidden;
+    }
+
+    /* ============================================================
+       ANIMATED BACKGROUND
+       ============================================================ */
+    .bg-shapes {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .shape {
+      position: absolute;
+      border-radius: 50%;
+      opacity: 0.08;
+      animation: floatShape 20s ease-in-out infinite;
+    }
+
+    .shape:nth-child(1) {
+      width: 400px;
+      height: 400px;
+      background: #4CAF50;
+      top: -100px;
+      left: -100px;
+      animation-delay: 0s;
+    }
+
+    .shape:nth-child(2) {
+      width: 300px;
+      height: 300px;
+      background: #FF5722;
+      top: 60%;
+      right: -50px;
+      animation-delay: -5s;
+    }
+
+    .shape:nth-child(3) {
+      width: 250px;
+      height: 250px;
+      background: #2196F3;
+      bottom: -50px;
+      left: 30%;
+      animation-delay: -10s;
+    }
+
+    .shape:nth-child(4) {
+      width: 180px;
+      height: 180px;
+      background: #FFC107;
+      top: 20%;
+      left: 60%;
+      animation-delay: -15s;
+    }
+
+    @keyframes floatShape {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      25% { transform: translate(30px, -40px) scale(1.05); }
+      50% { transform: translate(-20px, 20px) scale(0.95); }
+      75% { transform: translate(40px, 30px) scale(1.02); }
+    }
+
+    /* ============================================================
+       CONTAINER
+       ============================================================ */
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 720px;
+      padding: 40px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ============================================================
+       HEADER / LOGO
+       ============================================================ */
+    .logo-container {
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .logo-ring {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4CAF50, #2E7D32, #1B5E20);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 40px rgba(76, 175, 80, 0.3),
+                  0 0 80px rgba(76, 175, 80, 0.1);
+      animation: pulseRing 3s ease-in-out infinite;
+    }
+
+    @keyframes pulseRing {
+      0%, 100% { box-shadow: 0 0 40px rgba(76, 175, 80, 0.3), 0 0 80px rgba(76, 175, 80, 0.1); }
+      50% { box-shadow: 0 0 60px rgba(76, 175, 80, 0.5), 0 0 120px rgba(76, 175, 80, 0.2); }
+    }
+
+    .logo-icon {
+      font-size: 56px;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+      line-height: 1;
+    }
+
+    .app-name {
+      font-size: 36px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #81C784, #A5D6A7, #C8E6C9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+      margin-top: 12px;
+    }
+
+    .app-subtitle {
+      font-size: 16px;
+      color: rgba(255,255,255,0.6);
+      font-weight: 400;
+      margin-top: 4px;
+      letter-spacing: 1px;
+    }
+
+    .tagline {
+      margin-top: 16px;
+      font-size: 18px;
+      color: rgba(255,255,255,0.85);
+      text-align: center;
+      line-height: 1.6;
+      max-width: 500px;
+    }
+
+    .tagline .highlight {
+      color: #81C784;
+      font-weight: 600;
+    }
+
+    /* ============================================================
+       FEATURES
+       ============================================================ */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      width: 100%;
+      margin: 32px 0;
+    }
+
+    .feature-card {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 18px 14px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .feature-card:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+      border-color: rgba(76, 175, 80, 0.3);
+    }
+
+    .feature-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .feature-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.8);
+      font-weight: 500;
+    }
+
+    /* ============================================================
+       DOWNLOAD CARD
+       ============================================================ */
+    .download-card {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 32px;
+      margin: 16px 0 24px;
+      text-align: center;
+    }
+
+    .download-card h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .download-card p {
+      color: rgba(255,255,255,0.65);
+      font-size: 14px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .version-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(76, 175, 80, 0.15);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 13px;
+      color: #81C784;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #4CAF50, #2E7D32);
+      color: white;
+      text-decoration: none;
+      padding: 18px 40px;
+      border-radius: 16px;
+      font-size: 18px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 20px rgba(76, 175, 80, 0.3);
+      width: 100%;
+      max-width: 380px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-download:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(76, 175, 80, 0.4);
+      background: linear-gradient(135deg, #66BB6A, #388E3C);
+    }
+
+    .btn-download:active {
+      transform: translateY(0);
+    }
+
+    .btn-download .btn-icon {
+      font-size: 24px;
+    }
+
+    .btn-download .btn-size {
+      font-size: 13px;
+      font-weight: 400;
+      opacity: 0.8;
+    }
+
+    /* ============================================================
+       QR CODE SECTION
+       ============================================================ */
+    .qr-section {
+      width: 100%;
+      margin-top: 32px;
+      text-align: center;
+    }
+
+    .qr-section h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .qr-section p {
+      color: rgba(255,255,255,0.55);
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .qr-wrapper {
+      background: white;
+      padding: 16px;
+      border-radius: 16px;
+      display: inline-block;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    .qr-wrapper img {
+      display: block;
+      width: 220px;
+      height: 220px;
+      image-rendering: pixelated;
+    }
+
+    .btn-save-qr {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .btn-save-qr:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: translateY(-2px);
+    }
+
+    /* ============================================================
+       INSTRUCTIONS
+       ============================================================ */
+    .instructions {
+      width: 100%;
+      margin-top: 32px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 20px;
+      padding: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .instructions h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-align: center;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .step:last-child {
+      margin-bottom: 0;
+    }
+
+    .step-number {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #81C784;
+    }
+
+    .step-text {
+      font-size: 14px;
+      color: rgba(255,255,255,0.7);
+      line-height: 1.5;
+      padding-top: 4px;
+    }
+
+    /* ============================================================
+       FOOTER
+       ============================================================ */
+    .footer {
+      margin-top: 48px;
+      text-align: center;
+      color: rgba(255,255,255,0.3);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .footer a {
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* ============================================================
+       RESPONSIVE
+       ============================================================ */
+    @media (max-width: 480px) {
+      .container {
+        padding: 24px 16px 40px;
+      }
+      .app-name {
+        font-size: 28px;
+      }
+      .logo-ring {
+        width: 96px;
+        height: 96px;
+      }
+      .logo-icon {
+        font-size: 44px;
+      }
+      .features {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+      .download-card {
+        padding: 24px 16px;
+      }
+      .btn-download {
+        padding: 16px 24px;
+        font-size: 16px;
+      }
+      .qr-wrapper img {
+        width: 180px;
+        height: 180px;
+      }
+    }
+
+    /* ============================================================
+       SCROLL ANIMATIONS
+       ============================================================ */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeIn 0.6s ease forwards;
+    }
+
+    .fade-in-delay-1 { animation-delay: 0.2s; }
+    .fade-in-delay-2 { animation-delay: 0.4s; }
+    .fade-in-delay-3 { animation-delay: 0.6s; }
+    .fade-in-delay-4 { animation-delay: 0.8s; }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background shapes -->
+  <div class="bg-shapes">
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+  </div>
+
+  <div class="container">
+    <!-- LOGO -->
+    <div class="logo-container fade-in">
+      <div class="logo-ring">
+        <span class="logo-icon">🛡️</span>
+      </div>
+    </div>
+
+    <h1 class="app-name fade-in fade-in-delay-1">SafeZone</h1>
+    <p class="app-subtitle fade-in fade-in-delay-1">Red Vecinal de Seguridad</p>
+
+    <p class="tagline fade-in fade-in-delay-2">
+      Protege tu comunidad con <span class="highlight">SafeZone</span>.<br />
+      Reporta incidentes, recibe alertas y mantén a salvo tu vecindario en <span class="highlight">Collique, Comas</span>.
+    </p>
+
+    <!-- FEATURES -->
+    <div class="features fade-in fade-in-delay-2">
+      <div class="feature-card">
+        <span class="feature-icon">🚨</span>
+        <span class="feature-label">Alerta S.O.S.</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🗺️</span>
+        <span class="feature-label">Mapa de Riesgo</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🤖</span>
+        <span class="feature-label">ZoneBot IA</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">💬</span>
+        <span class="feature-label">Chat Vecinal</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📰</span>
+        <span class="feature-label">Muro en Vivo</span>
+      </div>
+    </div>
+
+    <!-- DOWNLOAD CARD -->
+    <div class="download-card fade-in fade-in-delay-3">
+      <h2>📲 Descargar SafeZone</h2>
+      <p>Versión beta para Android. Escanea el código QR o descarga directamente.</p>
+      
+      <div class="version-badge">
+        <span>📱</span>
+        <span>v1.0.0 Beta</span>
+        <span>•</span>
+        <span>89 MB</span>
+        <span>•</span>
+        <span>Android 5.0+</span>
+      </div>
+
+      <a href="https://files.catbox.moe/6rvz9b.apk" class="btn-download" download>
+        <span class="btn-icon">⬇️</span>
+        <span>
+          Descargar APK<br />
+          <span class="btn-size">Directo · Sin caducidad</span>
+        </span>
+      </a>
+    </div>
+
+    <!-- QR CODE -->
+    <div class="qr-section fade-in fade-in-delay-4" id="qr-section">
+      <h3>🔲 Escanea para descargar</h3>
+      <p>Apunta tu cámara al código QR desde tu celular</p>
+      
+      <div class="qr-container">
+        <div class="qr-wrapper">
+          <!-- QR Code generado dinámicamente con API -->
+          <img 
+            id="qr-image"
+            src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/"
+            alt="Código QR para descargar SafeZone"
+            loading="lazy"
+          />
+        </div>
+        
+        <a 
+          href="https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/"
+          class="btn-save-qr"
+          download="safezone-qr.png"
+          target="_blank"
+        >
+          💾 Descargar QR como imagen
+        </a>
+      </div>
+    </div>
+
+    <!-- INSTRUCTIONS -->
+    <div class="instructions fade-in fade-in-delay-4">
+      <h3>📋 ¿Cómo instalar?</h3>
+      
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-text">Descarga el APK usando el botón de arriba o escanea el código QR.</div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-text">Abre el archivo descargado y permite "Instalar apps de orígenes desconocidos" si tu celular lo pide.</div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-text">¡Listo! Abre SafeZone, asigna tu código y empieza a proteger tu comunidad 🛡️</div>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <p>SafeZone — Red Vecinal de Seguridad, Collique, Comas</p>
+      <p>Versión Beta 1.0.0</p>
+      <p>
+        <a href="https://github.com/usserap0912/PRoyecto-de-Emprendimiento" target="_blank">GitHub</a>
+        &nbsp;·&nbsp;
+        <a href="https://kpkdgejbjgmrbyemubmx.supabase.co" target="_blank">Supabase</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
