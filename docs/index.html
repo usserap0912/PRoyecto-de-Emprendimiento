@@ -9,7 +9,7 @@
   <!-- Open Graph -->
   <meta property="og:title" content="SafeZone - Red Vecinal de Seguridad" />
   <meta property="og:description" content="Protege tu comunidad. Descarga SafeZone para Android." />
-  <meta property="og:image" content="https://kpkdgejbjgmrbyemubmx.supabase.co/storage/v1/object/public/safezone-images/preview/safezone-preview.png" />
+  <meta property="og:image" content="https://files.catbox.moe/6rvz9b.apk" />
   <meta property="og:url" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/" />
   
   <style>
@@ -577,14 +577,12 @@
           />
         </div>
         
-        <a 
-          href="https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/"
+        <button 
           class="btn-save-qr"
-          download="safezone-qr.png"
-          target="_blank"
+          onclick="downloadQR()"
         >
           💾 Descargar QR como imagen
-        </a>
+        </button>
       </div>
     </div>
 
@@ -617,5 +615,25 @@
       </p>
     </div>
   </div>
+
+  <script>
+    // ============================================================
+    // DESCARGAR QR COMO IMAGEN
+    // ============================================================
+    async function downloadQR() {
+      const link = document.createElement('a');
+      link.download = 'safezone-qr.png';
+      link.href = 'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/';
+      link.target = '_blank';
+      link.click();
+    }
+
+    // ============================================================
+    // CONTADOR DE DESCARGAS (opcional)
+    // ============================================================
+    document.querySelector('.btn-download')?.addEventListener('click', function() {
+      console.log('SafeZone APK download initiated');
+    });
+  </script>
 </body>
 </html>
