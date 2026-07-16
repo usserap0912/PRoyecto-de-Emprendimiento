@@ -9,7 +9,7 @@
   <!-- Open Graph -->
   <meta property="og:title" content="SafeZone - Red Vecinal de Seguridad" />
   <meta property="og:description" content="Protege tu comunidad. Descarga SafeZone para Android." />
-  <meta property="og:image" content="https://files.catbox.moe/6rvz9b.apk" />
+  <!-- La previsualización se cargará desde la propia página -->
   <meta property="og:url" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/" />
   
   <style>
@@ -621,19 +621,40 @@
     // DESCARGAR QR COMO IMAGEN
     // ============================================================
     async function downloadQR() {
-      const link = document.createElement('a');
-      link.download = 'safezone-qr.png';
-      link.href = 'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/';
-      link.target = '_blank';
-      link.click();
-    }
+      const btn = document.querySelector('.btn-save-qr');
+      const originalText = btn.textContent;
+      btn.textContent = '⏳ Descargando...';
+      btn.disabled = true;
 
-    // ============================================================
-    // CONTADOR DE DESCARGAS (opcional)
-    // ============================================================
-    document.querySelector('.btn-download')?.addEventListener('click', function() {
-      console.log('SafeZone APK download initiated');
-    });
+      try {
+        const response = await fetch(
+          'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/'
+        );
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'safezone-qr.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        btn.textContent = '✅ ¡Descargado!';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 2000);
+      } catch (e) {
+        // Fallback: abrir en nueva pestaña
+        window.open(
+          'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/',
+          '_blank'
+        );
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
   </script>
 </body>
 </html>
