@@ -30,6 +30,18 @@ subprojects {
             it.compileSdkVersion(36)
         }
     }
+
+    // Sustituir la dependencia privada play-services-tapandpay (no disponible públicamente)
+    // por una dependencia pública equivalente para que la compilación y el lint no fallen.
+    configurations.all {
+        resolutionStrategy {
+            dependencySubstitution {
+                substitute(module("com.google.android.gms:play-services-tapandpay"))
+                    .using(module("com.google.android.gms:play-services-base:18.5.0"))
+                    .because("play-services-tapandpay es un SDK privado de Google no disponible en repositorios públicos")
+            }
+        }
+    }
 }
 subprojects {
     project.evaluationDependsOn(":app")

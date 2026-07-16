@@ -45,6 +45,12 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Keystore y credenciales de firma (NO incluirlos en git)
+*.jks
+*.p12
+*.p8
+key.properties
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
