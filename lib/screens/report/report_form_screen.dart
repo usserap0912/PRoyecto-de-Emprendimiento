@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
+import 'package:safezone/services/location_service.dart';
+import 'package:safezone/services/sound_service.dart';
 
 class ReportFormScreen extends StatefulWidget {
   final String userCode;
@@ -34,6 +37,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   bool _bucketReady = false;
   double? _currentLat;
   double? _currentLng;
+  int? _detectedZone;
   bool _isLocating = false;
 
   @override
@@ -171,9 +175,12 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       );
 
       if (mounted) {
+        // Detectar zona usando el algoritmo de ray-casting sobre polígonos
+        final zone = LocationService.detectZone(position.latitude, position.longitude);
         setState(() {
           _currentLat = position.latitude;
           _currentLng = position.longitude;
+          _detectedZone = zone;
           _isLocating = false;
         });
       }
@@ -186,41 +193,13 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   // ================================================================
-  // FUNCIÓN MATEMÁTICA: DETERMINAR ZONA COLLIQUE (Haversine simplificado)
+  // ZONA DETECTADA usando polígonos de Collique (ray-casting)
+  // ================================================================
+  // Usa LocationService.detectZone() que implementa el algoritmo de
+  // punto-en-polígono sobre los mismos polígonos del Mapa de Riesgo.
   // ================================================================
   int _determinarZonaCollique(double lat, double lng) {
-    final Map<int, Map<String, double>> zonasCollique = {
-      1:  {'lat': -11.9447, 'lng': -77.0611},
-      2:  {'lat': -11.9412, 'lng': -77.0575},
-      3:  {'lat': -11.9378, 'lng': -77.0540},
-      4:  {'lat': -11.9345, 'lng': -77.0505},
-      5:  {'lat': -11.9310, 'lng': -77.0465},
-      6:  {'lat': -11.9275, 'lng': -77.0425},
-      7:  {'lat': -11.9240, 'lng': -77.0385},
-      8:  {'lat': -11.9205, 'lng': -77.0345},
-      9:  {'lat': -11.9360, 'lng': -77.0490},
-      10: {'lat': -11.9290, 'lng': -77.0390},
-      11: {'lat': -11.9220, 'lng': -77.0290},
-      12: {'lat': -11.9180, 'lng': -77.0250},
-      13: {'lat': -11.9400, 'lng': -77.0450},
-      14: {'lat': -11.9435, 'lng': -77.0530},
-    };
-
-    int zonaMasCercana = 1;
-    double distanciaMinima = double.infinity;
-
-    zonasCollique.forEach((zona, coords) {
-      final double dLat = lat - coords['lat']!;
-      final double dLng = lng - coords['lng']!;
-      final double distancia = (dLat * dLat) + (dLng * dLng);
-
-      if (distancia < distanciaMinima) {
-        distanciaMinima = distancia;
-        zonaMasCercana = zona;
-      }
-    });
-
-    return zonaMasCercana;
+    return LocationService.detectZone(lat, lng) ?? 0;
   }
 
   // ================================================================
@@ -266,8 +245,8 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       final prefs = await SharedPreferences.getInstance();
       final userCode = prefs.getString('user_device_code') ?? widget.userCode;
 
-      // Determinar zona usando Haversine
-      final zonaDeterminada = _determinarZonaCollique(_currentLat!, _currentLng!);
+      // Usar zona detectada por ray-casting sobre polígonos
+      final zonaDeterminada = _detectedZone ?? _determinarZonaCollique(_currentLat!, _currentLng!);
 
       // Construir payload para Supabase
       final reportData = <String, dynamic>{
@@ -297,7 +276,18 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       // Insertar en Supabase tabla 'reports'
       await _supabase.client.from('reports').insert(reportData);
 
+      // Otorgar puntos vecinales (+10 por reportar)
+      _supabase.addVecinoPoints(
+        userCode: userCode,
+        points: 10,
+        reason: 'report',
+        description: 'Reportó un incidente de $_selectedCategory',
+      );
+
       if (mounted) {
+        // Sonido de éxito
+        SoundService().play('report_sent');
+
         setState(() {
           _isSubmitting = false;
           _showSuccess = true;
@@ -309,6 +299,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
           _descriptionController.clear();
           _currentLat = null;
           _currentLng = null;
+          _detectedZone = null;
         });
 
         Future.delayed(const Duration(seconds: 2), () {
@@ -337,7 +328,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppTheme.brandRedDark, AppTheme.brandRedBright],
+              colors: [Color(0xFFE65100), AppTheme.sectionReportar],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -408,7 +399,11 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
               final isSelected = _selectedCategory == cat['key'];
               return Expanded(
                 child: GestureDetector(
-                  onTap: () { if (mounted) setState(() => _selectedCategory = cat['key'] as String); },
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    SoundService().play('button_click');
+                    if (mounted) setState(() => _selectedCategory = cat['key'] as String);
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -475,7 +470,11 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                 ),
               );
             }).toList(),
-            onChanged: (value) { if (mounted) setState(() => _riskLevel = value); },
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              SoundService().play('button_click');
+              if (mounted) setState(() => _riskLevel = value);
+            },
           ),
 
           const SizedBox(height: 24),
@@ -488,7 +487,11 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
           ..._tags.map((tag) {
             final isSelected = _selectedTag == tag['key'];
             return GestureDetector(
-              onTap: () { if (mounted) setState(() => _selectedTag = tag['key'] as String); },
+              onTap: () {
+                HapticFeedback.selectionClick();
+                SoundService().play('button_click');
+                if (mounted) setState(() => _selectedTag = tag['key'] as String);
+              },
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -660,16 +663,31 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    _isLocating
-                        ? 'Obteniendo ubicación...'
-                        : _currentLat != null
-                            ? '📍 Ubicación capturada (${_currentLat!.toStringAsFixed(4)}, ${_currentLng!.toStringAsFixed(4)})'
-                            : 'La ubicación se capturará al enviar',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _currentLat != null ? AppTheme.safeGreen : Colors.grey[500],
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _isLocating
+                            ? 'Obteniendo ubicación...'
+                            : _currentLat != null
+                                ? '📍 Ubicación capturada'
+                                : 'La ubicación se capturará al enviar',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _currentLat != null ? AppTheme.safeGreen : Colors.grey[500],
+                        ),
+                      ),
+                      if (_detectedZone != null && _detectedZone! > 0)
+                        Text(
+                          'Zona $_detectedZone · ${LocationService.zoneName(_detectedZone!)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: LocationService.zoneColors[_detectedZone! - 1],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],

@@ -18,7 +18,7 @@ class SupabaseService {
   static Future<void> initialize() async {
     await Supabase.initialize(
       url: 'https://kpkdgejbjgmrbyemubmx.supabase.co',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwa2RnZWpiamdtcmJ5ZW11Ym14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2NjI5NTUsImV4cCI6MjA5NTIzODk1NX0.IRncOSBz7ALzvsazsQ4a1M3LaykBQ6Hsqd8GuE3LQf8',
+      publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwa2RnZWpiamdtcmJ5ZW11Ym14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2NjI5NTUsImV4cCI6MjA5NTIzODk1NX0.IRncOSBz7ALzvsazsQ4a1M3LaykBQ6Hsqd8GuE3LQf8',
     );
   }
 
@@ -133,6 +133,110 @@ class SupabaseService {
   }
 
   // ============================================================
+  // ARCHIVO DE REPORTES ANTIGUOS
+  // ============================================================
+
+  /// Ejecuta la función archive_old_reports() en Supabase.
+  /// Mueve reportes > 7 días a archived_reports y los elimina de la tabla principal.
+  /// Retorna la cantidad de reportes archivados.
+  Future<int> archiveOldReports() async {
+    try {
+      final result = await client.rpc('archive_old_reports');
+      if (result is int) return result;
+      return 0;
+    } catch (e) {
+      debugPrint('SupabaseService.archiveOldReports error: $e');
+      return 0;
+    }
+  }
+
+  /// Obtiene reportes archivados con filtros opcionales.
+  Future<List<Map<String, dynamic>>> getArchivedReports({
+    int? zone,
+    String? category,
+    int limit = 50,
+  }) async {
+    try {
+      var query = client.from('archived_reports').select();
+
+      if (zone != null) {
+        query = query.eq('zone', zone);
+      }
+      if (category != null) {
+        query = query.eq('category', category);
+      }
+
+      final result = await query.order('created_at', ascending: false).limit(limit);
+      return result;
+    } catch (e) {
+      debugPrint('SupabaseService.getArchivedReports error: $e');
+      return [];
+    }
+  }
+
+  // ============================================================
+  // PUNTOS VECINALES
+  // ============================================================
+
+  /// Obtiene el nivel y puntos totales de un vecino.
+  Future<Map<String, dynamic>?> getVecinoLevel(String userCode) async {
+    try {
+      final result = await client.rpc('get_vecino_level', params: {
+        'p_user_code': userCode,
+      });
+      if (result is List && result.isNotEmpty) {
+        return result[0] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('SupabaseService.getVecinoLevel error: $e');
+      return null;
+    }
+  }
+
+  /// Agrega puntos a un vecino por una acción.
+  Future<int> addVecinoPoints({
+    required String userCode,
+    required int points,
+    required String reason,
+    String? description,
+  }) async {
+    try {
+      final result = await client.rpc('add_vecino_points', params: {
+        'p_user_code': userCode,
+        'p_points': points,
+        'p_reason': reason,
+        'p_description': description,
+      });
+      return (result as num?)?.toInt() ?? 0;
+    } catch (e) {
+      debugPrint('SupabaseService.addVecinoPoints error: $e');
+      return 0;
+    }
+  }
+
+  /// Realiza un check-in de zona segura.
+  Future<Map<String, dynamic>> doSafeCheckin({
+    required String userCode,
+    required int zone,
+    double? lat,
+    double? lng,
+  }) async {
+    try {
+      final result = await client.rpc('do_safe_checkin', params: {
+        'p_user_code': userCode,
+        'p_zone': zone,
+        'p_lat': lat,
+        'p_lng': lng,
+      });
+      return result as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('SupabaseService.doSafeCheckin error: $e');
+      return {'success': false, 'message': 'Error al hacer check-in'};
+    }
+  }
+
+  // ============================================================
   // STORAGE (imágenes y videos)
   // ============================================================
 
@@ -165,6 +269,53 @@ class SupabaseService {
     } catch (e) {
       debugPrint('SupabaseService.uploadFile error: $e');
       return null;
+    }
+  }
+
+  // ============================================================
+  // RANKING VECINAL
+  // ============================================================
+
+  /// Obtiene el ranking de los top vecinos por puntos.
+  Future<List<Map<String, dynamic>>> getRanking({int limit = 10}) async {
+    try {
+      final result = await client.rpc('get_ranking', params: {
+        'p_limit': limit,
+      });
+      return (result as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('SupabaseService.getRanking error: $e');
+      return [];
+    }
+  }
+
+  /// Canjea puntos por días Premium.
+  Future<Map<String, dynamic>> redeemVecinoPoints({
+    required String userCode,
+    required int points,
+  }) async {
+    try {
+      final result = await client.rpc('redeem_points', params: {
+        'p_user_code': userCode,
+        'p_points': points,
+      });
+      return result as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('SupabaseService.redeemVecinoPoints error: $e');
+      return {'success': false, 'message': 'Error al canjear puntos: $e'};
+    }
+  }
+
+  /// Obtiene el historial de canjes de un usuario.
+  Future<List<Map<String, dynamic>>> getRedemptions(String userCode) async {
+    try {
+      final result = await client.rpc('get_redemptions', params: {
+        'p_user_code': userCode,
+      });
+      return (result as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('SupabaseService.getRedemptions error: $e');
+      return [];
     }
   }
 

@@ -91,6 +91,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: AppTheme.sectionMuro,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

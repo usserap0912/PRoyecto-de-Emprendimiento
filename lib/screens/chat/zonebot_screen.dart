@@ -293,6 +293,7 @@ class _ZoneBotScreenState extends State<ZoneBotScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: AppTheme.sectionZoneBot,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

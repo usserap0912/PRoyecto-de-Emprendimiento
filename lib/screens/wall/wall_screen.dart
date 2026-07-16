@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/models/report_comment.dart';
 import 'package:safezone/services/report_service.dart';
+import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/widgets/report_video_player.dart';
 import 'package:safezone/widgets/tag_badge.dart';
+import 'package:safezone/widgets/reaction_particles.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 class WallScreen extends StatefulWidget {
@@ -26,6 +29,7 @@ class _WallScreenState extends State<WallScreen> {
   final ReportService _reportService = ReportService();
   List<Report> _reports = [];
   bool _isLoading = true;
+  int _previousReportCount = 0;
 
   // Filtro temporal activo: null = sin filtro
   String? _activeTimeFilter;
@@ -66,12 +70,20 @@ class _WallScreenState extends State<WallScreen> {
   }
 
   /// Suscripción en tiempo real con Supabase Channel
+  /// Reproduce sonido cuando llega un nuevo reporte
   void _subscribeToRealtime() {
     _reportService.subscribeToRealtime(
       zone: widget.zone,
       onData: (reports) {
         if (mounted) {
           setState(() {
+            final newCount = reports.length;
+            // Sonido de nuevo reporte (solo si ya había cargado antes)
+            if (_previousReportCount > 0 && newCount > _previousReportCount) {
+              SoundService().play('zonebot_open');
+              HapticFeedback.mediumImpact();
+            }
+            _previousReportCount = newCount;
             _reports = reports;
             _isLoading = false;
           });
@@ -96,6 +108,7 @@ class _WallScreenState extends State<WallScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: AppTheme.sectionMuro,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -319,8 +332,24 @@ class _ReportCardState extends State<_ReportCard> {
     if (mounted) setState(() => _userReactions = reactions);
   }
 
-  /// Alterna una reacción emoji
+  /// Alterna una reacción emoji con sonido, haptic y partículas
   Future<void> _handleEmojiReaction(String reactionType) async {
+    HapticFeedback.lightImpact();
+    SoundService().play('button_click');
+
+    // Mostrar partículas en la posición de la tarjeta
+    if (mounted) {
+      try {
+        final box = context.findRenderObject() as RenderBox?;
+        if (box != null && box.hasSize) {
+          final position = box.localToGlobal(
+            Offset(box.size.width / 2, box.size.height - 30),
+          );
+          showReactionParticles(context, position);
+        }
+      } catch (_) {}
+    }
+
     await _reportService.toggleEmojiReaction(
         widget.report.id, widget.userCode, reactionType);
     await _loadUserReactions();
@@ -457,44 +486,47 @@ class _ReportCardState extends State<_ReportCard> {
                 borderRadius: BorderRadius.circular(12),
                 child: GestureDetector(
                   onTap: () => _showImageFullscreen(context, widget.report.imageUrl!),
-                  child: Image.network(
-                    widget.report.imageUrl!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        height: 200,
-                        color: isDark ? AppTheme.darkSurface : Colors.grey[200],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
-                            color: AppTheme.primaryGreen,
+                  child: Hero(
+                    tag: 'report_img_${widget.report.id}',
+                    child: Image.network(
+                      widget.report.imageUrl!,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 200,
+                          color: isDark ? AppTheme.darkSurface : Colors.grey[200],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                              color: AppTheme.primaryGreen,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 200,
-                        color: isDark ? AppTheme.darkSurface : Colors.grey[200],
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.broken_image_outlined, size: 40, color: mutedColor),
-                              const SizedBox(height: 8),
-                              Text('No se pudo cargar la imagen',
-                                  style: TextStyle(color: mutedColor, fontSize: 13)),
-                            ],
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 200,
+                          color: isDark ? AppTheme.darkSurface : Colors.grey[200],
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.broken_image_outlined, size: 40, color: mutedColor),
+                                const SizedBox(height: 8),
+                                Text('No se pudo cargar la imagen',
+                                    style: TextStyle(color: mutedColor, fontSize: 13)),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -595,6 +627,10 @@ class _ReportCardState extends State<_ReportCard> {
   }
 
   void _showImageFullscreen(BuildContext context, String imageUrl) {
+    // Extraer el ID único de la imagen desde la URL para el Hero
+    // Usamos el report id como tag (ya que el widget padre tiene acceso)
+    final tag = 'report_img_${widget.report.id}';
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -607,27 +643,30 @@ class _ReportCardState extends State<_ReportCard> {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Center(
-                      child: CircularProgressIndicator(color: Colors.white));
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.broken_image, color: Colors.white54, size: 64),
-                        SizedBox(height: 16),
-                        Text('Error al cargar imagen',
-                            style: TextStyle(color: Colors.white54)),
-                      ],
-                    ),
-                  );
-                },
+              child: Hero(
+                tag: tag,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(
+                        child: CircularProgressIndicator(color: Colors.white));
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                          SizedBox(height: 16),
+                          Text('Error al cargar imagen',
+                              style: TextStyle(color: Colors.white54)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),

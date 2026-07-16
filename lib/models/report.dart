@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safezone/theme/app_theme.dart';
 
 class Report {
   final String id;
@@ -123,6 +124,8 @@ class Report {
     switch (category) {
       case 'robo':
         return 'Robo';
+      case 'sos':
+        return '🚨 S.O.S.';
       case 'sospechoso':
         return 'Sospechoso';
       case 'extorsion':
@@ -138,6 +141,8 @@ class Report {
     switch (category) {
       case 'robo':
         return Icons.visibility_off;
+      case 'sos':
+        return Icons.sos;
       case 'sospechoso':
         return Icons.person_search;
       case 'extorsion':
@@ -153,6 +158,8 @@ class Report {
     switch (category) {
       case 'robo':
         return const Color(0xFFD32F2F);
+      case 'sos':
+        return AppTheme.sosRed; // Color SOS intenso
       case 'extorsion':
         return const Color(0xFFD32F2F);
       case 'sospechoso':

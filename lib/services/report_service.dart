@@ -188,6 +188,30 @@ class ReportService {
   }
 
   // ============================================================
+  // ARCHIVO DE REPORTES ANTIGUOS
+  // ============================================================
+
+  /// Archiva reportes más antiguos que 7 días.
+  /// Retorna cuántos reportes fueron archivados.
+  Future<int> archiveOldReports() async {
+    return _supabase.archiveOldReports();
+  }
+
+  /// Obtiene reportes archivados del historial.
+  Future<List<Report>> getArchivedReports({
+    int? zone,
+    String? category,
+    int limit = 50,
+  }) async {
+    final data = await _supabase.getArchivedReports(
+      zone: zone,
+      category: category,
+      limit: limit,
+    );
+    return data.map((m) => Report.fromMap(m)).toList();
+  }
+
+  // ============================================================
   // COMENTARIOS
   // ============================================================
 
