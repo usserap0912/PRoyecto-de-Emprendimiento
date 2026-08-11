@@ -6,6 +6,7 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:safezone/config/map_config.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/location_service.dart';
@@ -22,7 +23,6 @@ class RiskMapScreen extends StatefulWidget {
 }
 
 class _RiskMapScreenState extends State<RiskMapScreen> {
-  bool _useDarkStyle = false;
   final SupabaseService _supabase = SupabaseService();
   final LocationService _locationService = LocationService();
   final MapController _mapController = MapController();
@@ -43,20 +43,9 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
   bool _isCheckingIn = false;
   bool _hasAutoCentered = false;
 
-  // Límites de Collique
-  static final LatLngBounds _colliqueBounds = LatLngBounds(
-    const LatLng(-11.949, -77.090),
-    const LatLng(-11.918, -77.025),
-  );
-
-  // URLs CartoDB
-  static const String _cartoDbPositronUrl =
-      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-  static const String _cartoDbDarkUrl =
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-
-  String get _currentTileUrl =>
-      _useDarkStyle ? _cartoDbDarkUrl : _cartoDbPositronUrl;
+  // Tiles del mapa: MapTiler (con key) u OpenStreetMap (sin key).
+  // Ver lib/config/map_config.dart.
+  String get _currentTileUrl => MapConfig.lightTileUrl;
 
   // Colores distintivos para cada zona (gradiente de azul a rojo)
   static final List<Color> _zoneColors = [
@@ -779,8 +768,6 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
     }
   }
 
-  void _toggleStyle() => setState(() => _useDarkStyle = !_useDarkStyle);
-
   /// Construye un marcador de POI con icono y color personalizados.
   Marker _buildPoiMarker({
     required double lat,
@@ -1271,17 +1258,26 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: const LatLng(-11.9330, -77.0450),
+              initialCenter: MapConfig.colliqueCenter,
               initialZoom: 14.5,
-              minZoom: 13.0,
+              minZoom: 14.0,
               maxZoom: 17.0,
-              cameraConstraint: CameraConstraint.contain(bounds: _colliqueBounds),
+              backgroundColor: const Color(0xFFE8ECEF),
+              cameraConstraint: MapConfig.colliqueConstraint,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
             ),
             children: [
               TileLayer(
                 urlTemplate: _currentTileUrl,
                 userAgentPackageName: 'com.safezone.app',
+              ),
+
+              // Atribución requerida (MapTiler / OpenStreetMap)
+              SimpleAttributionWidget(
+                source: Text(
+                  MapConfig.attribution,
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
               ),
 
               // Marcadores agrupados con clustering
@@ -1515,38 +1511,6 @@ class _RiskMapScreenState extends State<RiskMapScreen> {
             ),
           ),
 
-          // === BOTON ESTILO MAPA ===
-          Positioned(
-            right: 16,
-            top: 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'style_toggle',
-                  onPressed: _toggleStyle,
-                  backgroundColor: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.75),
-                  child: Icon(
-                    _useDarkStyle ? Icons.light_mode : Icons.dark_mode,
-                    color: isDark ? Colors.black87 : Colors.white,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _useDarkStyle ? 'Oscuro' : 'Claro',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: isDark ? Colors.black87 : Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
 
           // === BOTON ZONA SEGURA ===
           Positioned(

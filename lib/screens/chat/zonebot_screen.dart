@@ -670,7 +670,7 @@ class _ZoneBotScreenState extends State<ZoneBotScreen> {
                         ),
                       );
                     } else {
-                      // Modo real: Stripe Checkout
+                      // Modo real: Mercado Pago Checkout
                       final result = await _paymentService.purchasePremium(
                         userCode: widget.userCode,
                         zone: widget.zone,
@@ -688,7 +688,7 @@ class _ZoneBotScreenState extends State<ZoneBotScreen> {
                         case PaymentResult.redirected:
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('🔗 Redirigiendo a Stripe... Vuelve cuando hayas completado el pago.'),
+                              content: Text('🔗 Abriendo Mercado Pago... Vuelve cuando hayas completado el pago.'),
                               backgroundColor: Colors.blue,
                               duration: Duration(seconds: 5),
                             ),

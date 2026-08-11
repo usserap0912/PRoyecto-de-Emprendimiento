@@ -36,8 +36,8 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
     _fadeAnim = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeIn),
     );
-    _scaleAnim = Tween<double>(begin: 0.5, end: 1).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.elasticOut),
+    _scaleAnim = Tween<double>(begin: 0.9, end: 1).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
     );
 
     // Cargar o generar código inmediatamente

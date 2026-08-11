@@ -180,11 +180,11 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 800),
     );
 
-    // Animación del tutorial (mano señalando)
+    // Animación del tutorial (mano señalando) — estática, sin rebote
     _tutorialHandController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
 
     // Verificar créditos después del primer frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -539,16 +539,8 @@ if (myIndex >= 0) {
               AnimatedBuilder(
                 animation: _tutorialHandController,
                 builder: (context, child) {
-                  final bounce =
-                      Tween<double>(begin: 0, end: 12).animate(
-                        CurvedAnimation(
-                          parent: _tutorialHandController,
-                          curve: Curves.easeInOutSine,
-                        ),
-                      ).value;
-
                   return Transform.translate(
-                    offset: Offset(0, -bounce),
+                    offset: Offset.zero,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -896,7 +888,7 @@ class _ThemeToggleFabState extends State<_ThemeToggleFab>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
+    );
   }
 
   @override
@@ -912,7 +904,7 @@ class _ThemeToggleFabState extends State<_ThemeToggleFab>
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, child) {
-        final pulse = _pulseController.value;
+        const pulse = 0.0;
         return GestureDetector(
           onTap: () {
             HapticFeedback.lightImpact();
@@ -973,7 +965,7 @@ class _AnimatedWarningIconState extends State<_AnimatedWarningIcon>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
+    );
   }
 
   @override
@@ -987,21 +979,17 @@ class _AnimatedWarningIconState extends State<_AnimatedWarningIcon>
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, child) {
-        final scale = 1.0 + _pulseController.value * 0.15;
-        return Transform.scale(
-          scale: scale,
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              widget.isCritical ? Icons.battery_alert : Icons.battery_std,
-              color: Colors.white,
-              size: 18,
-            ),
+        return Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            widget.isCritical ? Icons.battery_alert : Icons.battery_std,
+            color: Colors.white,
+            size: 18,
           ),
         );
       },

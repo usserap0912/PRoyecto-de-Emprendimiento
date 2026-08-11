@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:safezone/config/map_config.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/location_service.dart';
 import 'package:safezone/services/supabase_service.dart';
@@ -53,12 +54,6 @@ class _SosScreenState extends State<SosScreen>
   // Control de mapa
   final MapController _mapController = MapController();
 
-  // Limites Collique
-  static final LatLngBounds _colliqueBounds = LatLngBounds(
-    const LatLng(-11.949, -77.090),
-    const LatLng(-11.918, -77.025),
-  );
-
   @override
   void initState() {
     super.initState();
@@ -68,7 +63,7 @@ class _SosScreenState extends State<SosScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
-    _pulseScale = Tween<double>(begin: 1.0, end: 1.08).animate(
+    _pulseScale = Tween<double>(begin: 1.0, end: 1.04).animate(
       CurvedAnimation(parent: _pulseAnim, curve: Curves.easeInOut),
     );
 
@@ -981,13 +976,14 @@ class _SosScreenState extends State<SosScreen>
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
-                initialCenter: LatLng(lat, lng),
+                initialCenter: MapConfig.colliqueBounds.contains(LatLng(lat, lng))
+                    ? LatLng(lat, lng)
+                    : MapConfig.colliqueCenter,
                 initialZoom: 16.0,
                 minZoom: 14.0,
                 maxZoom: 17.0,
-                cameraConstraint: CameraConstraint.contain(
-                  bounds: _colliqueBounds,
-                ),
+                backgroundColor: const Color(0xFFE8ECEF),
+                cameraConstraint: MapConfig.colliqueConstraint,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all,
                 ),
@@ -995,8 +991,8 @@ class _SosScreenState extends State<SosScreen>
               children: [
                 TileLayer(
                   urlTemplate: isDark
-                      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                      ? MapConfig.darkTileUrl
+                      : MapConfig.lightTileUrl,
                   userAgentPackageName: 'com.safezone.app',
                 ),
 

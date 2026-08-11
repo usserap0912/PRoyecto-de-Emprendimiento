@@ -6,8 +6,8 @@
 CREATE TABLE IF NOT EXISTS community_points (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_code TEXT NOT NULL,
-  points INTEGER NOT NULL CHECK (points > 0),
-  reason TEXT NOT NULL CHECK (reason IN ('report', 'reaction', 'comment', 'sos', 'safe_checkin')),
+  points INTEGER NOT NULL CHECK (points <> 0),
+  reason TEXT NOT NULL CHECK (reason IN ('report', 'reaction', 'comment', 'sos', 'safe_checkin', 'redeem')),
   description TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

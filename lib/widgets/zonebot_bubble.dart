@@ -4,12 +4,12 @@ import 'package:safezone/theme/app_theme.dart';
 // ============================================================
 // ZONEBOT FLOATING BUBBLE — ASSISTANT FLOATING BUTTON
 // ============================================================
-// Globo flotante animado que abre el chat de ZoneBot como
-// asistente de la app. Se muestra en todas las pantallas.
+// Globo flotante que abre el chat de ZoneBot. Se muestra en todas
+// las pantallas.
 //
 // Características:
-//   - Entrada con animación bounce (escala elástica)
-//   - Pulsación suave continua (respiración)
+//   - Entrada suave (fade + escala ligera, sin rebote elástico)
+//   - Sin animaciones continuas (estático después de aparecer)
 //   - Arrastrable a cualquier posición de la pantalla
 //   - Indicador verde "En línea"
 // ============================================================
@@ -40,20 +40,10 @@ class ZoneBotBubble extends StatefulWidget {
 
 class _ZoneBotBubbleState extends State<ZoneBotBubble>
     with SingleTickerProviderStateMixin {
-  // ================================================================
-  // ANIMACIONES
-  // ================================================================
-  // _entranceController: Animación de entrada (bounce + fade in)
-  // _pulseController:    Animación continua de respiración
-  // ================================================================
-
+  // Animación de entrada única (fade + escala ligera)
   late AnimationController _entranceController;
-  late AnimationController _pulseController;
-
   late Animation<double> _entranceScale;
   late Animation<double> _entranceOpacity;
-
-  bool _entranceDone = false;
 
   /// Trackea si el usuario está arrastrando (para no confundir con tap)
   bool _isDragging = false;
@@ -62,47 +52,34 @@ class _ZoneBotBubbleState extends State<ZoneBotBubble>
   void initState() {
     super.initState();
 
-    // --- Controlador de entrada (bounce) ---
     _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 500),
     );
 
-    _entranceScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _entranceScale = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(
         parent: _entranceController,
-        curve: Curves.elasticOut,
+        curve: Curves.easeOutCubic,
       ),
     );
 
     _entranceOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _entranceController,
-        curve: const Interval(0.0, 0.25, curve: Curves.easeOut),
+        curve: Curves.easeOut,
       ),
-    );
-
-    // --- Controlador de pulsación continua ---
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2500),
     );
 
     // Iniciar animación de entrada después del primer frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _entranceController.forward().then((_) {
-        if (mounted) {
-          _pulseController.repeat(reverse: true);
-          setState(() => _entranceDone = true);
-        }
-      });
+      _entranceController.forward();
     });
   }
 
   @override
   void dispose() {
     _entranceController.dispose();
-    _pulseController.dispose();
     super.dispose();
   }
 
@@ -139,17 +116,10 @@ class _ZoneBotBubbleState extends State<ZoneBotBubble>
     return AnimatedBuilder(
       animation: _entranceController,
       builder: (context, child) {
-        // Escala combinada: entrada × pulsación
-        final entranceScale = _entranceScale.value;
-        final entranceOpacity = _entranceOpacity.value;
-
-        final pulse = _pulseController.value;
-        final breatheScale = 1.0 + (pulse * 0.04);
-
         return Opacity(
-          opacity: entranceOpacity,
+          opacity: _entranceOpacity.value,
           child: Transform.scale(
-            scale: entranceScale * breatheScale,
+            scale: _entranceScale.value,
             child: GestureDetector(
               onTapUp: _onTapUp,
               onPanStart: _onPanStart,
@@ -170,10 +140,9 @@ class _ZoneBotBubbleState extends State<ZoneBotBubble>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primaryGreen
-                          .withValues(alpha: 0.3 + pulse * 0.2),
-                      blurRadius: 8 + pulse * 6,
-                      spreadRadius: 1 + pulse * 2,
+                      color: AppTheme.primaryGreen.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      spreadRadius: 1,
                     ),
                     BoxShadow(
                       color: AppTheme.brandRedBright.withValues(alpha: 0.15),
@@ -196,15 +165,6 @@ class _ZoneBotBubbleState extends State<ZoneBotBubble>
                         size: 28,
                       ),
                     ),
-
-                    // Anillo pulsante (solo después de la entrada)
-                    if (_entranceDone)
-                      CustomPaint(
-                        painter: _BubbleRingPainter(
-                          progress: pulse,
-                        ),
-                        size: const Size(60, 60),
-                      ),
 
                     // Indicador "En línea"
                     Positioned(
@@ -267,32 +227,5 @@ class _ZoneBotBubbleState extends State<ZoneBotBubble>
         );
       },
     );
-  }
-}
-
-/// Paints a subtle pulsing ring around the bubble
-class _BubbleRingPainter extends CustomPainter {
-  final double progress;
-
-  _BubbleRingPainter({
-    required this.progress,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 2;
-
-    final ringPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.1 + progress * 0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5 + progress;
-
-    canvas.drawCircle(center, radius - progress * 2, ringPaint);
-  }
-
-  @override
-  bool shouldRepaint(_BubbleRingPainter oldDelegate) {
-    return oldDelegate.progress != progress;
   }
 }

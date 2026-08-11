@@ -41,7 +41,6 @@ class _PostCardState extends State<PostCard>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    if (_isSos) _sosPulseController.repeat(reverse: true);
   }
 
   Future<void> _loadUserReactions() async {

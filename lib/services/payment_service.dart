@@ -1,26 +1,29 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/zonebot_service.dart';
 
 // ============================================================
 // PAYMENT SERVICE
 // ============================================================
-// Maneja la suscripcion premium usando:
-//   - Stripe Checkout para el pago
-//   - Supabase Edge Function para crear sesiones y verificar estado
+// Maneja la suscripción premium usando:
+//   - Mercado Pago Checkout Pro (suscripción mensual en soles)
+//   - Supabase Edge Function para crear suscripciones y verificar estado
 //   - Supabase Database para persistir el estado premium
+//
+// ⚠️ MODO DEMO: por defecto los pagos son REALES.
+// Para compilar una versión de prueba SIN pagar (activa Premium
+// localmente), ejecuta con:
+//   flutter run --dart-define=DEMO_PREMIUM=true
 // ============================================================
 
-/// Resultado de una operacion de compra premium.
+/// Resultado de una operación de compra premium.
 enum PaymentResult {
   /// Compra exitosa (modo demo o pago confirmado)
   success,
 
-  /// Redirigido a Stripe Checkout (pendiente de confirmacion)
+  /// Redirigido a Mercado Pago Checkout (pendiente de confirmación)
   redirected,
 
   /// Error en el proceso de pago
@@ -30,25 +33,16 @@ enum PaymentResult {
 /// Servicio de pagos para SafeZone Premium.
 class PaymentService {
   static const String _functionBaseUrl =
-      'https://kpkdgejbjgmrbyemubmx.supabase.co/functions/v1/stripe-premium';
+      'https://kpkdgejbjgmrbyemubmx.supabase.co/functions/v1/mercadopago-premium';
 
-  static bool _demoMode = true;
-
-  static void setDemoMode(bool value) {
-    _demoMode = value;
-    debugPrint('PaymentService: Demo mode ${value ? "activado" : "desactivado"}');
-  }
+  /// Modo demo (sin pago real). Solo se activa compilando con
+  /// --dart-define=DEMO_PREMIUM=true
+  static const bool _demoMode =
+      bool.fromEnvironment('DEMO_PREMIUM', defaultValue: false);
 
   static bool get isDemoMode => _demoMode;
 
-  static void initialize({
-    String publishableKey = 'pk_test_placeholder',
-  }) {
-    Stripe.publishableKey = publishableKey;
-    debugPrint('PaymentService: Stripe inicializado');
-  }
-
-  /// Inicia el flujo de compra premium.
+  /// Inicia el flujo de compra premium (suscripción mensual).
   Future<PaymentResult> purchasePremium({
     required String userCode,
     required int zone,
@@ -60,7 +54,7 @@ class PaymentService {
       return PaymentResult.success;
     }
 
-    // Modo real: Stripe Checkout
+    // Modo real: Mercado Pago Checkout Pro
     try {
       final response = await http.post(
         Uri.parse('$_functionBaseUrl/checkout'),
@@ -80,11 +74,11 @@ class PaymentService {
       final checkoutUrl = data['url'] as String?;
 
       if (checkoutUrl == null) {
-        debugPrint('PaymentService: No se recibio URL de checkout');
+        debugPrint('PaymentService: No se recibió URL de checkout');
         return PaymentResult.failed;
       }
 
-      // Abrir Stripe Checkout en el navegador
+      // Abrir Mercado Pago Checkout en el navegador
       debugPrint('PaymentService: Abriendo checkout: $checkoutUrl');
       final uri = Uri.parse(checkoutUrl);
       try {
@@ -122,17 +116,35 @@ class PaymentService {
     return ZoneBotService.isPremium;
   }
 
-  /// Sincroniza el estado premium desde Supabase a ZoneBotService.
+  /// Cancela la suscripción Premium de Mercado Pago.
+  /// Retorna true si se canceló correctamente.
+  Future<bool> cancelPremiumSubscription({required String userCode}) async {
+    if (_demoMode) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_functionBaseUrl/cancel'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'userCode': userCode}),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('PaymentService: Error cancelando suscripción: $e');
+      return false;
+    }
+  }
+
+  /// Sincroniza el estado premium verificando contra Mercado Pago
+  /// (a través de la Edge Function /status). Usado por "Restaurar compras"
+  /// para auto-repararse si algún webhook se perdió.
   static Future<void> syncPremiumStatus({required String userCode}) async {
     if (_demoMode) return;
 
     try {
-      final profile = await SupabaseService().getProfileByCode(userCode);
-      if (profile != null) {
-        final isPremium = profile['is_premium'] as bool? ?? false;
-        ZoneBotService.setPremium(isPremium);
-        debugPrint('PaymentService: Premium sincronizado desde Supabase: $isPremium');
-      }
+      final service = PaymentService();
+      final isPremium = await service.checkPremiumStatus(userCode: userCode);
+      ZoneBotService.setPremium(isPremium);
+      debugPrint('PaymentService: Premium sincronizado: $isPremium');
     } catch (e) {
       debugPrint('PaymentService: Error sincronizando premium: $e');
     }

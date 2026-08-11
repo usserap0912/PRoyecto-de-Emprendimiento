@@ -66,12 +66,12 @@ class _StatsScreenState extends State<StatsScreen>
     _sparkleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
-    )..repeat();
+    );
 
     _badgePulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
+    );
   }
 
   @override

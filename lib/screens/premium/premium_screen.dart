@@ -32,6 +32,7 @@ class _PremiumScreenState extends State<PremiumScreen>
   final PaymentService _paymentService = PaymentService();
   bool _isPurchasing = false;
   bool _isRestoring = false;
+  bool _isCancelling = false;
 
   // Animaciones
   late AnimationController _pulseController;
@@ -91,7 +92,7 @@ class _PremiumScreenState extends State<PremiumScreen>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat(reverse: true);
+    );
 
     _staggerController = AnimationController(
       vsync: this,
@@ -184,7 +185,7 @@ class _PremiumScreenState extends State<PremiumScreen>
           _staggerController.forward();
         case PaymentResult.redirected:
           _showPremiumToast(
-            '🔗 Redirigiendo a Stripe... Vuelve cuando hayas completado el pago.',
+            '🔗 Abriendo Mercado Pago... Vuelve cuando hayas completado el pago.',
             color: Colors.blue,
             icon: Icons.link,
           );
@@ -235,6 +236,72 @@ class _PremiumScreenState extends State<PremiumScreen>
         '❌ Error al restaurar: $e',
         color: Colors.red,
         icon: Icons.error,
+      );
+    }
+  }
+
+  /// Cancela la suscripción Premium (Mercado Pago)
+  Future<void> _cancelSubscription() async {
+    HapticFeedback.mediumImpact();
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('¿Cancelar suscripción?'),
+          ],
+        ),
+        content: const Text(
+          'Podrás seguir usando Premium hasta el final del período ya pagado. '
+          'Para volver a activarlo, suscríbete nuevamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Seguir con Premium'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+    final cancelled = await _paymentService.cancelPremiumSubscription(
+      userCode: widget.userCode,
+    );
+
+    if (!mounted) return;
+    setState(() => _isCancelling = false);
+
+    if (cancelled) {
+      ZoneBotService.setPremium(false);
+      widget.onPremiumChanged?.call();
+      _showPremiumToast(
+        'Suscripción cancelada. Seguirás Premium hasta fin de período.',
+        color: Colors.orange,
+        icon: Icons.check_circle_outline,
+      );
+    } else {
+      _showPremiumToast(
+        '❌ No se pudo cancelar. Intenta de nuevo o cancela en tu cuenta de Mercado Pago.',
+        color: Colors.red,
+        icon: Icons.error_outline,
       );
     }
   }
@@ -762,13 +829,15 @@ class _PremiumScreenState extends State<PremiumScreen>
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () => _showPremiumToast(
-            '🔧 Gestión de suscripción próximamente.',
-            color: Colors.blue,
-            icon: Icons.construction,
-          ),
-          icon: const Icon(Icons.settings, size: 20),
-          label: const Text('Gestionar suscripción'),
+          onPressed: _isCancelling ? null : _cancelSubscription,
+          icon: _isCancelling
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.settings, size: 20),
+          label: const Text('Cancelar suscripción'),
           style: OutlinedButton.styleFrom(
             foregroundColor: isDark ? Colors.white : AppTheme.primaryGreen,
             side: BorderSide(
@@ -1062,7 +1131,7 @@ class _TermsScreen extends StatelessWidget {
               icon: Icons.payment,
               title: 'Suscripción y pagos',
               content:
-                  'El pago se realiza de forma mensual a través de Stripe. '
+                  'El pago se realiza de forma mensual a través de Mercado Pago. '
                   'Puedes cancelar tu suscripción en cualquier momento. '
                   'Al cancelar, seguirás teniendo acceso a Premium hasta el '
                   'final del período de facturación actual.',
@@ -1090,7 +1159,7 @@ class _TermsScreen extends StatelessWidget {
               icon: Icons.privacy_tip_outlined,
               title: 'Privacidad',
               content:
-                  'Tus datos de pago son procesados de forma segura por Stripe. '
+                  'Tus datos de pago son procesados de forma segura por Mercado Pago. '
                   'SafeZone no almacena información de tarjetas de crédito. '
                   'Tu identidad permanece anónima incluso como usuario Premium.',
               isDark: isDark,

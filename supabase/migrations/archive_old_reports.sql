@@ -60,6 +60,22 @@ CREATE POLICY "Archived reactions insertable por cualquiera" ON archived_reactio
   FOR INSERT WITH CHECK (true);
 
 -- 3. Función: Archivar reportes antiguos (> 7 días)
+-- Elimina TODAS las versiones viejas de archive_old_reports (algunas
+-- versiones anteriores usaban una columna surprise_count que ya no existe)
+DO $$
+DECLARE
+  f record;
+BEGIN
+  FOR f IN
+    SELECT oid::regprocedure AS signature
+    FROM pg_proc
+    WHERE proname = 'archive_old_reports'
+      AND pronamespace = 'public'::regnamespace
+  LOOP
+    EXECUTE 'DROP FUNCTION ' || f.signature || ' CASCADE';
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION archive_old_reports()
 RETURNS INTEGER AS $$
 DECLARE

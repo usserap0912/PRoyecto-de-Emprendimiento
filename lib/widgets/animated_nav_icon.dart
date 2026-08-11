@@ -1,12 +1,11 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
 
 // ============================================================
-// ANIMATED NAV ICONS — Animación continua con controllers ligeros
+// NAV ICONS — Iconos de la barra de navegación (estáticos)
 // ============================================================
-// Cada icono tiene su propio AnimationController pequeno (~200 bytes).
-// Se descartan automáticamente al salir de pantalla via dispose().
+// Sin animaciones continuas: los iconos ya no pulsan, rebotan ni giran.
+// Solo cambia el color según estén activos o inactivos.
 // ============================================================
 
 enum AnimatedNavIconType {
@@ -18,9 +17,8 @@ enum AnimatedNavIconType {
   premium,
 }
 
-/// Icono animado para navegación inferior.
-/// Cada instancia tiene 1 AnimationController que se descarta al salir.
-class AnimatedNavIcon extends StatefulWidget {
+/// Icono para la navegación inferior. Estático, sin movimiento.
+class AnimatedNavIcon extends StatelessWidget {
   final AnimatedNavIconType type;
   final bool isActive;
   final double size;
@@ -31,49 +29,6 @@ class AnimatedNavIcon extends StatefulWidget {
     this.isActive = false,
     this.size = 22,
   });
-
-  @override
-  State<AnimatedNavIcon> createState() => _AnimatedNavIconState();
-}
-
-class _AnimatedNavIconState extends State<AnimatedNavIcon>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    final duration = switch (widget.type) {
-      AnimatedNavIconType.muro => const Duration(milliseconds: 1500),
-      AnimatedNavIconType.mapa => const Duration(milliseconds: 1200),
-      AnimatedNavIconType.sos => const Duration(milliseconds: 600),
-      AnimatedNavIconType.chat => const Duration(milliseconds: 1000),
-      AnimatedNavIconType.reportar => const Duration(seconds: 3),
-      AnimatedNavIconType.premium => const Duration(milliseconds: 800),
-    };
-    // reportar gira continuamente sin reversa; los demás van y vienen
-    _controller = AnimationController(vsync: this, duration: duration)
-      ..repeat(reverse: widget.type != AnimatedNavIconType.reportar);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = widget.isActive
-        ? _colorForType(widget.type)
-        : (isDark ? Colors.grey[500]! : Colors.grey[400]!);
-
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) => _buildIcon(_controller.value, color),
-    );
-  }
 
   /// Retorna el color personalizado para cada sección
   Color _colorForType(AnimatedNavIconType type) {
@@ -87,101 +42,25 @@ class _AnimatedNavIconState extends State<AnimatedNavIcon>
     };
   }
 
-  Widget _buildIcon(double value, Color color) {
-    return switch (widget.type) {
-      AnimatedNavIconType.muro => _muroIcon(value, color),
-      AnimatedNavIconType.mapa => _mapaIcon(value, color),
-      AnimatedNavIconType.sos => _sosIcon(value, color),
-      AnimatedNavIconType.chat => _chatIcon(value, color),
-      AnimatedNavIconType.reportar => _reportarIcon(value, color),
-      AnimatedNavIconType.premium => _premiumIcon(value, color),
+  IconData _iconFor(AnimatedNavIconType type) {
+    return switch (type) {
+      AnimatedNavIconType.muro =>
+        isActive ? Icons.newspaper : Icons.newspaper_outlined,
+      AnimatedNavIconType.mapa => Icons.map,
+      AnimatedNavIconType.sos => Icons.sos,
+      AnimatedNavIconType.chat => Icons.chat,
+      AnimatedNavIconType.reportar => Icons.add_circle,
+      AnimatedNavIconType.premium => Icons.star,
     };
   }
 
-  // ============================================================
-  // MURO — Pulso suave + outline/filled
-  // ============================================================
-  Widget _muroIcon(double value, Color color) {
-    final scale = 1.0 + (value * 0.08);
-    return Transform.scale(
-      scale: scale,
-      child: Icon(
-        widget.isActive ? Icons.newspaper : Icons.newspaper_outlined,
-        size: widget.size,
-        color: color,
-      ),
-    );
-  }
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = isActive
+        ? _colorForType(type)
+        : (isDark ? Colors.grey[500]! : Colors.grey[400]!);
 
-  // ============================================================
-  // MAPA — Rebote sinusoidal
-  // ============================================================
-  Widget _mapaIcon(double value, Color color) {
-    final bounce = math.sin(value * math.pi * 2) * 2.0;
-    return Transform.translate(
-      offset: Offset(0, bounce),
-      child: Icon(Icons.map, size: widget.size, color: color),
-    );
-  }
-
-  // ============================================================
-  // S.O.S. — Pulso intenso + vibración
-  // ============================================================
-  Widget _sosIcon(double value, Color color) {
-    final scale = 1.0 + (value * 0.2);
-    final shake = math.sin(value * math.pi * 4) * 0.15;
-    return Transform.rotate(
-      angle: shake,
-      child: Transform.scale(
-        scale: scale,
-        child: Icon(Icons.sos, size: widget.size, color: color),
-      ),
-    );
-  }
-
-  // ============================================================
-  // CHAT — Respiración
-  // ============================================================
-  Widget _chatIcon(double value, Color color) {
-    final breathe = 1.0 + (value * 0.06);
-    return Transform.scale(
-      scale: breathe,
-      child: Icon(Icons.chat, size: widget.size, color: color),
-    );
-  }
-
-  // ============================================================
-  // REPORTAR — Giro continuo
-  // ============================================================
-  Widget _reportarIcon(double value, Color color) {
-    return Transform.rotate(
-      angle: value * math.pi * 2,
-      child: Icon(Icons.add_circle, size: widget.size, color: color),
-    );
-  }
-
-  // ============================================================
-  // PREMIUM — Estrella con halo pulsante
-  // ============================================================
-  Widget _premiumIcon(double value, Color color) {
-    final scale = 1.0 + (value * 0.18);
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        if (value > 0.3)
-          Container(
-            width: widget.size * (1.3 + value * 0.5),
-            height: widget.size * (1.3 + value * 0.5),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: (value - 0.3) * 0.4),
-            ),
-          ),
-        Transform.scale(
-          scale: scale,
-          child: Icon(Icons.star, size: widget.size, color: color),
-        ),
-      ],
-    );
+    return Icon(_iconFor(type), size: size, color: color);
   }
 }

@@ -51,10 +51,10 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _logoScaleAnim = Tween<double>(begin: 0.6, end: 1).animate(
+    _logoScaleAnim = Tween<double>(begin: 0.9, end: 1).animate(
       CurvedAnimation(
         parent: _animController,
-        curve: const Interval(0.0, 0.4, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic),
       ),
     );
 
