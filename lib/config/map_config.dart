@@ -47,14 +47,21 @@ class MapConfig {
       : '© OpenStreetMap contributors';
 
   /// Límites reales de Collique (el mapa no puede salir de aquí).
-  /// Cubre desde la Av. Túpac Amaru (oeste) hasta la zona alta (este).
+  /// Cubre el corredor urbano de la Av. Revolución (zonas 1-7) y los
+  /// lugares de referencia (Hospital Bernales, comisarías, fortaleza).
+  ///
+  /// Referencias:
+  ///   Inicio (Paradero Collique): -11.93284, -77.04221
+  ///   Fin (zona alta / Pasamayito): -11.93521, -77.01254
+  ///   Zonas 1-7: lat -11.9304..-11.9352, lng -77.0401..-77.0068
   static final LatLngBounds colliqueBounds = LatLngBounds(
-    const LatLng(-11.950, -77.095),
-    const LatLng(-11.898, -77.000),
+    const LatLng(-11.945, -77.055),
+    const LatLng(-11.905, -76.985),
   );
 
-  /// Centro de Collique (punto seguro para iniciar la cámara).
-  static const LatLng colliqueCenter = LatLng(-11.9142, -77.0253);
+  /// Centro de Collique: punto medio del corredor de la Av. Revolución
+  /// (entre las zonas 3 y 4), donde está la mayor parte del barrio.
+  static const LatLng colliqueCenter = LatLng(-11.9330, -77.0230);
 
   /// Restricción de cámara: el CENTRO del mapa siempre queda dentro de
   /// Collique, así el usuario no puede alejarse a otro distrito.

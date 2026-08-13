@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:safezone/app.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/screens/wall/wall_screen.dart';
 import 'package:safezone/screens/map/risk_map_screen.dart';
@@ -15,7 +14,6 @@ import 'package:safezone/widgets/app_tutorial.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/notification_service.dart';
-import 'package:safezone/services/power_saver_service.dart';
 import 'package:safezone/services/zonebot_service.dart';
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/widgets/animated_nav_icon.dart';
@@ -506,21 +504,6 @@ if (myIndex >= 0) {
               ),
             ),
 
-          // === BOTONES FLOTANTES (esquina inferior izquierda) ===
-          Positioned(
-            left: 16,
-            bottom: 80,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Botón Modo Ahorro
-                _PowerSaverToggleFab(),
-                const SizedBox(height: 8),
-                // Botón Cambiar Tema
-                _ThemeToggleFab(),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -796,148 +779,6 @@ if (myIndex >= 0) {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ============================================================
-// POWER SAVER TOGGLE FAB — Botón flotante modo ahorro
-// ============================================================
-
-class _PowerSaverToggleFab extends StatefulWidget {
-  @override
-  State<_PowerSaverToggleFab> createState() => _PowerSaverToggleFabState();
-}
-
-class _PowerSaverToggleFabState extends State<_PowerSaverToggleFab> {
-  @override
-  void initState() {
-    super.initState();
-    PowerSaverService().onChangeNotifier.addListener(_onSaverChanged);
-  }
-
-  void _onSaverChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    PowerSaverService().onChangeNotifier.removeListener(_onSaverChanged);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isSaverActive = PowerSaverService().isEnabled;
-
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        PowerSaverService().toggle();
-      },
-      child: Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isSaverActive
-              ? Colors.green.withValues(alpha: 0.3)
-              : Colors.white.withValues(alpha: 0.2),
-          border: Border.all(
-            color: isSaverActive
-                ? Colors.greenAccent.withValues(alpha: 0.6)
-                : Colors.white.withValues(alpha: 0.3),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isSaverActive
-                  ? Colors.green.withValues(alpha: 0.3)
-                  : Colors.black.withValues(alpha: 0.15),
-              blurRadius: 8,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: Icon(
-          isSaverActive ? Icons.battery_charging_full : Icons.battery_std,
-          color: isSaverActive ? Colors.greenAccent : Colors.white,
-          size: 24,
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// THEME TOGGLE FAB — Botón flotante para cambiar tema
-// ============================================================
-
-class _ThemeToggleFab extends StatefulWidget {
-  @override
-  State<_ThemeToggleFab> createState() => _ThemeToggleFabState();
-}
-
-class _ThemeToggleFabState extends State<_ThemeToggleFab>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        const pulse = 0.0;
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            SoundService().play('button_click');
-            SafeZoneAppState.instance?.toggleTheme();
-          },
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (isDark ? Colors.white : Colors.black)
-                  .withValues(alpha: 0.2 + pulse * 0.1),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.3),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: Icon(
-              isDark ? Icons.light_mode : Icons.dark_mode,
-              color: Colors.white,
-              size: 24,
-            ),
-          ),
-        );
-      },
     );
   }
 }

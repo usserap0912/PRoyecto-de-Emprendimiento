@@ -108,13 +108,13 @@ class LocationService {
   /// Retorna el nombre descriptivo de una zona.
   static String zoneName(int zoneNum) {
     const names = {
-      1: 'Av. Túpac Amaru - Entrada',
-      2: 'Mercado Collique',
-      3: 'Parque Central',
-      4: 'Los Olivos',
-      5: 'Av. Collique',
-      6: 'Sector Nuevo',
-      7: 'Alto Collique',
+      1: 'Entrada - Av. Revolución',
+      2: 'Mercado San Jhonny',
+      3: 'Hospital Bernales',
+      4: 'Comisaría PNP Collique',
+      5: 'Quebrada Alta',
+      6: 'Cumbre Urbana',
+      7: 'Asentamientos Humanos',
       8: 'Sector 8',
       9: 'Sector 9',
       10: 'Sector 10',
@@ -126,131 +126,132 @@ class LocationService {
     return names[zoneNum] ?? 'Zona $zoneNum';
   }
 
-  // Coordenadas REALES de Collique (Comas, Lima) según OpenStreetMap.
-  // El barrio Collique tiene su centro en (-11.9142, -77.0253) y sus zonas
-  // van desde la Av. Túpac Amaru (Zona 1, donde está el Hospital Sergio
-  // Bernales en -11.9141, -77.0375) hacia el este por la Av. Revolución.
-  static const double colliqueLat = -11.9142;
-  static const double colliqueLng = -77.0253;
+  // Coordenadas REALES de Collique (Comas, Lima) proporcionadas por la
+  // comunidad. Las zonas 1-7 se organizan de forma secuencial subiendo por
+  // el eje vial de la Av. Revolución, desde el Paradero Collique
+  // (cruce con Av. Túpac Amaru, -11.93284, -77.04221) hasta la zona alta
+  // (Calle Julio César Tello, -11.93521, -77.01254).
+  static const double colliqueLat = -11.9330;
+  static const double colliqueLng = -77.0230;
 
   /// Coordenadas de las 14 zonas de Collique (centros aproximados).
-  /// Zona 1 = entrada por Av. Túpac Amaru (Hospital Bernales);
-  /// las zonas avanzan hacia el este por la Av. Revolución.
+  /// Zona 1 = entrada (Paradero Collique); las zonas suben por la
+  /// Av. Revolución hacia el este; 8-14 continúan hacia la zona alta.
   static Map<int, Map<String, double>> get zoneCoordinates => {
-    1: {'lat': -11.9140, 'lng': -77.0370},  // Av. Túpac Amaru - Entrada (Hospital Bernales)
-    2: {'lat': -11.9140, 'lng': -77.0305},  // Mercado Collique (Mercado Central 1° Zona)
-    3: {'lat': -11.9140, 'lng': -77.0250},  // Parque Central
-    4: {'lat': -11.9205, 'lng': -77.0305},  // Los Olivos
-    5: {'lat': -11.9140, 'lng': -77.0195},  // Av. Collique (Comisaría PNP Comas Collique)
-    6: {'lat': -11.9205, 'lng': -77.0250},  // Sector Nuevo
-    7: {'lat': -11.9070, 'lng': -77.0305},  // Alto Collique
-    8: {'lat': -11.9140, 'lng': -77.0140},  // Sector 8
-    9: {'lat': -11.9205, 'lng': -77.0195},  // Sector 9
-    10: {'lat': -11.9070, 'lng': -77.0250}, // Sector 10
-    11: {'lat': -11.9205, 'lng': -77.0140}, // Sector 11
-    12: {'lat': -11.9070, 'lng': -77.0195}, // Sector 12
-    13: {'lat': -11.9070, 'lng': -77.0140}, // Sector 13
-    14: {'lat': -11.9070, 'lng': -77.0085}, // Zona más alta
+    1: {'lat': -11.9323, 'lng': -77.0401},  // Entrada - Av. Revolución (Paradero Collique)
+    2: {'lat': -11.9304, 'lng': -77.0345},  // Mercado San Jhonny (eje comercial)
+    3: {'lat': -11.9320, 'lng': -77.0270},  // Hospital Bernales (sector salud)
+    4: {'lat': -11.9338, 'lng': -77.0210},  // Comisaría PNP Collique (seguridad)
+    5: {'lat': -11.9348, 'lng': -77.0165},  // Quebrada Alta
+    6: {'lat': -11.9352, 'lng': -77.0125},  // Cumbre Urbana (Calle Julio César Tello)
+    7: {'lat': -11.9315, 'lng': -77.0068},  // Asentamientos Humanos (faldas del cerro)
+    8: {'lat': -11.9310, 'lng': -77.0040},  // Sector 8 (zona alta)
+    9: {'lat': -11.9290, 'lng': -77.0010},  // Sector 9 (zona alta)
+    10: {'lat': -11.9270, 'lng': -76.9985}, // Sector 10 (zona alta)
+    11: {'lat': -11.9250, 'lng': -76.9960}, // Sector 11 (zona alta)
+    12: {'lat': -11.9230, 'lng': -76.9935}, // Sector 12 (zona alta)
+    13: {'lat': -11.9210, 'lng': -76.9910}, // Sector 13 (zona alta)
+    14: {'lat': -11.9190, 'lng': -76.9885}, // Zona más alta
   };
 
   // Coordenadas de puntos de referencia reales en Collique
-  static const double hospitalLat = -11.9141;
-  static const double hospitalLng = -77.0375;
-  static const double comisariaLat = -11.9130;
-  static const double comisariaLng = -77.0162;
-  static const double museoLat = -11.9114;
-  static const double museoLng = -77.0261;
+  static const double hospitalLat = -11.91390;
+  static const double hospitalLng = -77.03928;
+  static const double comisariaLat = -11.92138;
+  static const double comisariaLng = -77.02264;
+  static const double museoLat = -11.93122;
+  static const double museoLng = -77.02895;
 
   // ================================================================
   // POLÍGONOS DE ZONAS
   // ================================================================
   /// Polígonos aproximados de las 14 zonas de Collique (vértices en sentido horario).
-  /// Cada zona es un cuadrilátero alrededor de su centro, cubriendo el área
-  /// real del barrio: desde la Av. Túpac Amaru (oeste) hasta la zona alta (este).
+  /// Las zonas 1-7 son bandas que suben por el eje de la Av. Revolución
+  /// (oeste → este); las zonas 8-14 continúan hacia la zona alta.
   static Map<int, List<Map<String, double>>> get zonePolygons => {
     1: [
-      {'lat': -11.9173, 'lng': -77.0398},
-      {'lat': -11.9173, 'lng': -77.0342},
-      {'lat': -11.9107, 'lng': -77.0342},
-      {'lat': -11.9107, 'lng': -77.0398},
+      {'lat': -11.9290, 'lng': -77.0435},
+      {'lat': -11.9290, 'lng': -77.0373},
+      {'lat': -11.9370, 'lng': -77.0373},
+      {'lat': -11.9370, 'lng': -77.0435},
     ],
     2: [
-      {'lat': -11.9173, 'lng': -77.0333},
-      {'lat': -11.9173, 'lng': -77.0277},
-      {'lat': -11.9107, 'lng': -77.0277},
-      {'lat': -11.9107, 'lng': -77.0333},
+      {'lat': -11.9290, 'lng': -77.0373},
+      {'lat': -11.9290, 'lng': -77.0308},
+      {'lat': -11.9370, 'lng': -77.0308},
+      {'lat': -11.9370, 'lng': -77.0373},
     ],
     3: [
-      {'lat': -11.9173, 'lng': -77.0278},
-      {'lat': -11.9173, 'lng': -77.0222},
-      {'lat': -11.9107, 'lng': -77.0222},
-      {'lat': -11.9107, 'lng': -77.0278},
+      {'lat': -11.9290, 'lng': -77.0308},
+      {'lat': -11.9290, 'lng': -77.0240},
+      {'lat': -11.9370, 'lng': -77.0240},
+      {'lat': -11.9370, 'lng': -77.0308},
     ],
     4: [
-      {'lat': -11.9238, 'lng': -77.0333},
-      {'lat': -11.9238, 'lng': -77.0277},
-      {'lat': -11.9172, 'lng': -77.0277},
-      {'lat': -11.9172, 'lng': -77.0333},
+      {'lat': -11.9290, 'lng': -77.0240},
+      {'lat': -11.9290, 'lng': -77.0188},
+      {'lat': -11.9370, 'lng': -77.0188},
+      {'lat': -11.9370, 'lng': -77.0240},
     ],
     5: [
-      {'lat': -11.9173, 'lng': -77.0223},
-      {'lat': -11.9173, 'lng': -77.0167},
-      {'lat': -11.9107, 'lng': -77.0167},
-      {'lat': -11.9107, 'lng': -77.0223},
+      {'lat': -11.9290, 'lng': -77.0188},
+      {'lat': -11.9290, 'lng': -77.0145},
+      {'lat': -11.9370, 'lng': -77.0145},
+      {'lat': -11.9370, 'lng': -77.0188},
     ],
     6: [
-      {'lat': -11.9238, 'lng': -77.0278},
-      {'lat': -11.9238, 'lng': -77.0222},
-      {'lat': -11.9172, 'lng': -77.0222},
-      {'lat': -11.9172, 'lng': -77.0278},
+      {'lat': -11.9290, 'lng': -77.0145},
+      {'lat': -11.9290, 'lng': -77.0097},
+      {'lat': -11.9370, 'lng': -77.0097},
+      {'lat': -11.9370, 'lng': -77.0145},
     ],
     7: [
-      {'lat': -11.9103, 'lng': -77.0333},
-      {'lat': -11.9103, 'lng': -77.0277},
-      {'lat': -11.9037, 'lng': -77.0277},
-      {'lat': -11.9037, 'lng': -77.0333},
+      {'lat': -11.9290, 'lng': -77.0097},
+      {'lat': -11.9290, 'lng': -77.0054},
+      {'lat': -11.9370, 'lng': -77.0054},
+      {'lat': -11.9370, 'lng': -77.0097},
     ],
     8: [
-      {'lat': -11.9173, 'lng': -77.0168},
-      {'lat': -11.9173, 'lng': -77.0112},
-      {'lat': -11.9107, 'lng': -77.0112},
-      {'lat': -11.9107, 'lng': -77.0168},
+      {'lat': -11.9290, 'lng': -77.0054},
+      {'lat': -11.9290, 'lng': -77.0025},
+      {'lat': -11.9370, 'lng': -77.0025},
+      {'lat': -11.9370, 'lng': -77.0054},
     ],
     9: [
-      {'lat': -11.9238, 'lng': -77.0223},
-      {'lat': -11.9238, 'lng': -77.0167},
-      {'lat': -11.9172, 'lng': -77.0167},
-      {'lat': -11.9172, 'lng': -77.0223},
+      {'lat': -11.9270, 'lng': -77.0025},
+      {'lat': -11.9270, 'lng': -76.9998},
+      {'lat': -11.9350, 'lng': -76.9998},
+      {'lat': -11.9350, 'lng': -77.0025},
     ],
     10: [
-      {'lat': -11.9103, 'lng': -77.0278},
-      {'lat': -11.9103, 'lng': -77.0222},
-      {'lat': -11.9037, 'lng': -77.0222},
-      {'lat': -11.9037, 'lng': -77.0278},
+      {'lat': -11.9250, 'lng': -76.9998},
+      {'lat': -11.9250, 'lng': -76.9973},
+      {'lat': -11.9330, 'lng': -76.9973},
+      {'lat': -11.9330, 'lng': -76.9998},
     ],
     11: [
-      {'lat': -11.9238, 'lng': -77.0168},
-      {'lat': -11.9238, 'lng': -77.0112},
-      {'lat': -11.9172, 'lng': -77.0112},
-      {'lat': -11.9172, 'lng': -77.0168},
+      {'lat': -11.9230, 'lng': -76.9973},
+      {'lat': -11.9230, 'lng': -76.9948},
+      {'lat': -11.9310, 'lng': -76.9948},
+      {'lat': -11.9310, 'lng': -76.9973},
     ],
     12: [
-      {'lat': -11.9103, 'lng': -77.0223},
-      {'lat': -11.9103, 'lng': -77.0167},
-      {'lat': -11.9037, 'lng': -77.0167},
-      {'lat': -11.9037, 'lng': -77.0223},
+      {'lat': -11.9210, 'lng': -76.9948},
+      {'lat': -11.9210, 'lng': -76.9923},
+      {'lat': -11.9290, 'lng': -76.9923},
+      {'lat': -11.9290, 'lng': -76.9948},
     ],
     13: [
-      {'lat': -11.9103, 'lng': -77.0168},
-      {'lat': -11.9103, 'lng': -77.0112},
-      {'lat': -11.9037, 'lng': -77.0112},
-      {'lat': -11.9037, 'lng': -77.0168},
+      {'lat': -11.9190, 'lng': -76.9923},
+      {'lat': -11.9190, 'lng': -76.9898},
+      {'lat': -11.9270, 'lng': -76.9898},
+      {'lat': -11.9270, 'lng': -76.9923},
     ],
     14: [
-      {'lat': -11.9103, 'lng': -77.0113},
-      {'lat': -11.9103, 'lng': -77.0057},
-      {'lat': -11.9037, 'lng': -77.0057},
-      {'lat': -11.9037, 'lng': -77.0113},
+      {'lat': -11.9170, 'lng': -76.9898},
+      {'lat': -11.9170, 'lng': -76.9870},
+      {'lat': -11.9250, 'lng': -76.9870},
+      {'lat': -11.9250, 'lng': -76.9898},
     ],
   };
 
@@ -262,16 +263,16 @@ class LocationService {
   static List<Map<String, dynamic>> get policeStations => [
     {
       'name': 'Comisaría PNP Comas Collique',
-      'lat': -11.9130,
-      'lng': -77.0162,
+      'lat': -11.92138,
+      'lng': -77.02264,
       'type': 'comisaria',
       'phone': '(01) 558-2798',
       'emergency_phone': '105',
     },
     {
       'name': 'Comisaría PNP de la Familia - Collique',
-      'lat': -11.9130,
-      'lng': -77.0104,
+      'lat': -11.91298,
+      'lng': -77.01038,
       'type': 'comisaria',
       'phone': '(01) 558-2799',
       'emergency_phone': '105',
@@ -418,8 +419,8 @@ class LocationService {
   static List<Map<String, dynamic>> get healthCenters => [
     {
       'name': 'Hospital Sergio Bernales',
-      'lat': -11.9141,
-      'lng': -77.0375,
+      'lat': -11.91390,
+      'lng': -77.03928,
       'type': 'hospital',
       'phone': '(01) 558-0101',
     },

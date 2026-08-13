@@ -1708,12 +1708,13 @@ class _RiskMapScreenState extends State<RiskMapScreen>
             options: MapOptions(
               initialCenter: MapConfig.colliqueCenter,
               initialZoom: 14.5,
-              // Rango de zoom amplio: permite alejarse para ver calles,
-              // avenidas y jirones, y acercarse para leer sus nombres.
+              // Rango de zoom amplio: permite alejarse para ver todo
+              // Collique y sus alrededores, y acercarse mucho para leer
+              // calles y detalles (MapTiler soporta hasta nivel 22).
               // InteractiveFlag.all habilita el zoom con los dedos (pinch),
               // doble toque, arrastre y rotación.
-              minZoom: 12.0,
-              maxZoom: 19.0,
+              minZoom: 11.0,
+              maxZoom: 21.0,
               backgroundColor: const Color(0xFFE8ECEF),
               cameraConstraint: MapConfig.colliqueConstraint,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),

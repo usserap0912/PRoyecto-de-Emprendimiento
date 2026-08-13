@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
-import 'package:safezone/app.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/zonebot_service.dart';
 import 'package:safezone/services/report_service.dart';
@@ -192,13 +191,6 @@ class _StatsScreenState extends State<StatsScreen>
       appBar: AppBar(
         backgroundColor: AppTheme.sectionPerfil,
         title: Text(isPremium ? 'Mi Perfil ⭐' : 'Mi Perfil'),
-        actions: [
-          IconButton(
-            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: () => SafeZoneAppState.instance?.toggleTheme(),
-            tooltip: isDark ? 'Modo claro' : 'Modo oscuro',
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -439,19 +431,6 @@ class _StatsScreenState extends State<StatsScreen>
                       mutedColor: mutedColor,
                     ),
                     const Divider(height: 24),
-                    _InfoRow(
-                      icon: isDark ? Icons.light_mode : Icons.dark_mode,
-                      label: 'Tema',
-                      value: isDark ? 'Oscuro' : 'Claro',
-                      textColor: textColor,
-                      mutedColor: mutedColor,
-                      trailing: Switch(
-                        value: isDark,
-                        onChanged: (_) =>
-                            SafeZoneAppState.instance?.toggleTheme(),
-                        activeThumbColor: AppTheme.primaryLight,
-                      ),
-                    ),
                     if (isPremium) ...[
                       const Divider(height: 24),
                       _InfoRow(
