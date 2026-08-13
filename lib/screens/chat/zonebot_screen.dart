@@ -96,11 +96,13 @@ class _ZoneBotScreenState extends State<ZoneBotScreen> {
           content: '¡Hola, vecino **${widget.userCode}**! 🦸‍♂️\n\n'
               'Soy **ZoneBot**, tu robot guardián de SafeZone en Collique. '
               'Estoy aquí para ayudarte a mantener segura nuestra comunidad.\n\n'
-              'Esto es lo que puedo hacer por ti:\n'
-              '🛡️ Darte el **Consejo Creativo del Día**\n'
-              '🗺️ Guiarte en el uso del **Mapa de Riesgo**\n'
-              '🚨 Ayudarte con el **botón S.O.S.**\n'
-              '💬 Responder tus dudas sobre la app\n\n'
+              '🛡️ **¿Tienes alguna duda sobre la app?** Pregúntame lo que quieras:\n'
+              '• ¿Cómo reportar un incidente?\n'
+              '• ¿Cómo usar el **Mapa de Riesgo**?\n'
+              '• ¿Cuándo usar el **botón S.O.S.**?\n'
+              '• ¿Cómo funciona el **Chat Vecinal**?\n\n'
+              'Y si no tienes dudas, ¡también podemos conversar de lo que quieras! '
+              'Soy un asistente libre. 😊\n\n'
               '¿En qué te ayudo hoy?',
           botAnimationState: 'happy',
           createdAt: DateTime.now().subtract(const Duration(seconds: 2)),

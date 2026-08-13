@@ -126,126 +126,131 @@ class LocationService {
     return names[zoneNum] ?? 'Zona $zoneNum';
   }
 
-  // Coordenadas del centro del mapa (Av. Revolución, Collique)
-  // Centro ajustado para abarcar las 14 zonas completas
-  static const double colliqueLat = -11.9368;
-  static const double colliqueLng = -77.0770;
+  // Coordenadas REALES de Collique (Comas, Lima) según OpenStreetMap.
+  // El barrio Collique tiene su centro en (-11.9142, -77.0253) y sus zonas
+  // van desde la Av. Túpac Amaru (Zona 1, donde está el Hospital Sergio
+  // Bernales en -11.9141, -77.0375) hacia el este por la Av. Revolución.
+  static const double colliqueLat = -11.9142;
+  static const double colliqueLng = -77.0253;
 
-  /// Coordenadas de las 14 zonas de Collique (aproximadas)
+  /// Coordenadas de las 14 zonas de Collique (centros aproximados).
+  /// Zona 1 = entrada por Av. Túpac Amaru (Hospital Bernales);
+  /// las zonas avanzan hacia el este por la Av. Revolución.
   static Map<int, Map<String, double>> get zoneCoordinates => {
-    1: {'lat': -11.9280, 'lng': -77.0700},  // Av. Túpac Amaru - Entrada
-    2: {'lat': -11.9300, 'lng': -77.0720},  // Mercado Collique
-    3: {'lat': -11.9325, 'lng': -77.0734},  // Parque Central
-    4: {'lat': -11.9350, 'lng': -77.0750},  // Los Olivos
-    5: {'lat': -11.9370, 'lng': -77.0770},  // Av. Collique
-    6: {'lat': -11.9295, 'lng': -77.0690},  // Sector Nuevo
-    7: {'lat': -11.9340, 'lng': -77.0780},  // Alto Collique
-    8: {'lat': -11.9360, 'lng': -77.0790},  // Sector 8
-    9: {'lat': -11.9380, 'lng': -77.0805},  // Sector 9
-    10: {'lat': -11.9395, 'lng': -77.0818}, // Sector 10
-    11: {'lat': -11.9410, 'lng': -77.0830}, // Sector 11
-    12: {'lat': -11.9425, 'lng': -77.0842}, // Sector 12
-    13: {'lat': -11.9440, 'lng': -77.0852}, // Sector 13
-    14: {'lat': -11.9455, 'lng': -77.0860}, // Zona más alta
+    1: {'lat': -11.9140, 'lng': -77.0370},  // Av. Túpac Amaru - Entrada (Hospital Bernales)
+    2: {'lat': -11.9140, 'lng': -77.0305},  // Mercado Collique (Mercado Central 1° Zona)
+    3: {'lat': -11.9140, 'lng': -77.0250},  // Parque Central
+    4: {'lat': -11.9205, 'lng': -77.0305},  // Los Olivos
+    5: {'lat': -11.9140, 'lng': -77.0195},  // Av. Collique (Comisaría PNP Comas Collique)
+    6: {'lat': -11.9205, 'lng': -77.0250},  // Sector Nuevo
+    7: {'lat': -11.9070, 'lng': -77.0305},  // Alto Collique
+    8: {'lat': -11.9140, 'lng': -77.0140},  // Sector 8
+    9: {'lat': -11.9205, 'lng': -77.0195},  // Sector 9
+    10: {'lat': -11.9070, 'lng': -77.0250}, // Sector 10
+    11: {'lat': -11.9205, 'lng': -77.0140}, // Sector 11
+    12: {'lat': -11.9070, 'lng': -77.0195}, // Sector 12
+    13: {'lat': -11.9070, 'lng': -77.0140}, // Sector 13
+    14: {'lat': -11.9070, 'lng': -77.0085}, // Zona más alta
   };
 
-  // Coordenadas de puntos de referencia en Collique
-  static const double hospitalLat = -11.9312;
-  static const double hospitalLng = -77.0698;
-  static const double comisariaLat = -11.9335;
-  static const double comisariaLng = -77.0730;
-  static const double museoLat = -11.9265;
-  static const double museoLng = -77.0665;
+  // Coordenadas de puntos de referencia reales en Collique
+  static const double hospitalLat = -11.9141;
+  static const double hospitalLng = -77.0375;
+  static const double comisariaLat = -11.9130;
+  static const double comisariaLng = -77.0162;
+  static const double museoLat = -11.9114;
+  static const double museoLng = -77.0261;
 
   // ================================================================
   // POLÍGONOS DE ZONAS
   // ================================================================
   /// Polígonos aproximados de las 14 zonas de Collique (vértices en sentido horario).
-  /// Cada zona es un cuadrilátero alrededor de su centro.
+  /// Cada zona es un cuadrilátero alrededor de su centro, cubriendo el área
+  /// real del barrio: desde la Av. Túpac Amaru (oeste) hasta la zona alta (este).
   static Map<int, List<Map<String, double>>> get zonePolygons => {
     1: [
-      {'lat': -11.9260, 'lng': -77.0715},
-      {'lat': -11.9275, 'lng': -77.0685},
-      {'lat': -11.9295, 'lng': -77.0690},
-      {'lat': -11.9290, 'lng': -77.0720},
+      {'lat': -11.9173, 'lng': -77.0398},
+      {'lat': -11.9173, 'lng': -77.0342},
+      {'lat': -11.9107, 'lng': -77.0342},
+      {'lat': -11.9107, 'lng': -77.0398},
     ],
     2: [
-      {'lat': -11.9285, 'lng': -77.0735},
-      {'lat': -11.9290, 'lng': -77.0705},
-      {'lat': -11.9315, 'lng': -77.0710},
-      {'lat': -11.9310, 'lng': -77.0740},
+      {'lat': -11.9173, 'lng': -77.0333},
+      {'lat': -11.9173, 'lng': -77.0277},
+      {'lat': -11.9107, 'lng': -77.0277},
+      {'lat': -11.9107, 'lng': -77.0333},
     ],
     3: [
-      {'lat': -11.9305, 'lng': -77.0750},
-      {'lat': -11.9315, 'lng': -77.0720},
-      {'lat': -11.9340, 'lng': -77.0725},
-      {'lat': -11.9335, 'lng': -77.0755},
+      {'lat': -11.9173, 'lng': -77.0278},
+      {'lat': -11.9173, 'lng': -77.0222},
+      {'lat': -11.9107, 'lng': -77.0222},
+      {'lat': -11.9107, 'lng': -77.0278},
     ],
     4: [
-      {'lat': -11.9330, 'lng': -77.0765},
-      {'lat': -11.9340, 'lng': -77.0735},
-      {'lat': -11.9365, 'lng': -77.0740},
-      {'lat': -11.9360, 'lng': -77.0770},
+      {'lat': -11.9238, 'lng': -77.0333},
+      {'lat': -11.9238, 'lng': -77.0277},
+      {'lat': -11.9172, 'lng': -77.0277},
+      {'lat': -11.9172, 'lng': -77.0333},
     ],
     5: [
-      {'lat': -11.9350, 'lng': -77.0785},
-      {'lat': -11.9365, 'lng': -77.0755},
-      {'lat': -11.9385, 'lng': -77.0760},
-      {'lat': -11.9380, 'lng': -77.0790},
+      {'lat': -11.9173, 'lng': -77.0223},
+      {'lat': -11.9173, 'lng': -77.0167},
+      {'lat': -11.9107, 'lng': -77.0167},
+      {'lat': -11.9107, 'lng': -77.0223},
     ],
     6: [
-      {'lat': -11.9275, 'lng': -77.0705},
-      {'lat': -11.9285, 'lng': -77.0675},
-      {'lat': -11.9305, 'lng': -77.0680},
-      {'lat': -11.9300, 'lng': -77.0710},
+      {'lat': -11.9238, 'lng': -77.0278},
+      {'lat': -11.9238, 'lng': -77.0222},
+      {'lat': -11.9172, 'lng': -77.0222},
+      {'lat': -11.9172, 'lng': -77.0278},
     ],
     7: [
-      {'lat': -11.9325, 'lng': -77.0795},
-      {'lat': -11.9335, 'lng': -77.0765},
-      {'lat': -11.9360, 'lng': -77.0770},
-      {'lat': -11.9355, 'lng': -77.0800},
+      {'lat': -11.9103, 'lng': -77.0333},
+      {'lat': -11.9103, 'lng': -77.0277},
+      {'lat': -11.9037, 'lng': -77.0277},
+      {'lat': -11.9037, 'lng': -77.0333},
     ],
     8: [
-      {'lat': -11.9345, 'lng': -77.0805},
-      {'lat': -11.9355, 'lng': -77.0775},
-      {'lat': -11.9375, 'lng': -77.0780},
-      {'lat': -11.9370, 'lng': -77.0810},
+      {'lat': -11.9173, 'lng': -77.0168},
+      {'lat': -11.9173, 'lng': -77.0112},
+      {'lat': -11.9107, 'lng': -77.0112},
+      {'lat': -11.9107, 'lng': -77.0168},
     ],
     9: [
-      {'lat': -11.9365, 'lng': -77.0820},
-      {'lat': -11.9375, 'lng': -77.0790},
-      {'lat': -11.9395, 'lng': -77.0795},
-      {'lat': -11.9390, 'lng': -77.0825},
+      {'lat': -11.9238, 'lng': -77.0223},
+      {'lat': -11.9238, 'lng': -77.0167},
+      {'lat': -11.9172, 'lng': -77.0167},
+      {'lat': -11.9172, 'lng': -77.0223},
     ],
     10: [
-      {'lat': -11.9380, 'lng': -77.0835},
-      {'lat': -11.9395, 'lng': -77.0805},
-      {'lat': -11.9415, 'lng': -77.0810},
-      {'lat': -11.9410, 'lng': -77.0840},
+      {'lat': -11.9103, 'lng': -77.0278},
+      {'lat': -11.9103, 'lng': -77.0222},
+      {'lat': -11.9037, 'lng': -77.0222},
+      {'lat': -11.9037, 'lng': -77.0278},
     ],
     11: [
-      {'lat': -11.9395, 'lng': -77.0845},
-      {'lat': -11.9410, 'lng': -77.0815},
-      {'lat': -11.9425, 'lng': -77.0820},
-      {'lat': -11.9420, 'lng': -77.0850},
+      {'lat': -11.9238, 'lng': -77.0168},
+      {'lat': -11.9238, 'lng': -77.0112},
+      {'lat': -11.9172, 'lng': -77.0112},
+      {'lat': -11.9172, 'lng': -77.0168},
     ],
     12: [
-      {'lat': -11.9410, 'lng': -77.0855},
-      {'lat': -11.9425, 'lng': -77.0825},
-      {'lat': -11.9440, 'lng': -77.0830},
-      {'lat': -11.9435, 'lng': -77.0860},
+      {'lat': -11.9103, 'lng': -77.0223},
+      {'lat': -11.9103, 'lng': -77.0167},
+      {'lat': -11.9037, 'lng': -77.0167},
+      {'lat': -11.9037, 'lng': -77.0223},
     ],
     13: [
-      {'lat': -11.9425, 'lng': -77.0865},
-      {'lat': -11.9435, 'lng': -77.0835},
-      {'lat': -11.9455, 'lng': -77.0840},
-      {'lat': -11.9450, 'lng': -77.0870},
+      {'lat': -11.9103, 'lng': -77.0168},
+      {'lat': -11.9103, 'lng': -77.0112},
+      {'lat': -11.9037, 'lng': -77.0112},
+      {'lat': -11.9037, 'lng': -77.0168},
     ],
     14: [
-      {'lat': -11.9440, 'lng': -77.0875},
-      {'lat': -11.9450, 'lng': -77.0845},
-      {'lat': -11.9465, 'lng': -77.0850},
-      {'lat': -11.9460, 'lng': -77.0880},
+      {'lat': -11.9103, 'lng': -77.0113},
+      {'lat': -11.9103, 'lng': -77.0057},
+      {'lat': -11.9037, 'lng': -77.0057},
+      {'lat': -11.9037, 'lng': -77.0113},
     ],
   };
 
@@ -253,189 +258,189 @@ class LocationService {
   // PUNTOS DE REFERENCIA (POIs)
   // ================================================================
 
-  /// Comisarías y puntos policiales cercanos a Collique, Comas.
+  /// Comisarías y puntos policiales reales de Collique y alrededores (OSM).
   static List<Map<String, dynamic>> get policeStations => [
     {
-      'name': 'Comisaría de Collique',
-      'lat': -11.9335,
-      'lng': -77.0730,
+      'name': 'Comisaría PNP Comas Collique',
+      'lat': -11.9130,
+      'lng': -77.0162,
       'type': 'comisaria',
       'phone': '(01) 558-2798',
       'emergency_phone': '105',
     },
     {
-      'name': 'Comisaría de Santa Luzmila',
-      'lat': -11.9380,
-      'lng': -77.0590,
+      'name': 'Comisaría PNP de la Familia - Collique',
+      'lat': -11.9130,
+      'lng': -77.0104,
       'type': 'comisaria',
-      'phone': '(01) 536-1842',
+      'phone': '(01) 558-2799',
       'emergency_phone': '105',
     },
     {
-      'name': 'Comisaría de La Pascana',
-      'lat': -11.9450,
-      'lng': -77.0430,
-      'type': 'comisaria',
-      'phone': '(01) 562-3456',
-      'emergency_phone': '105',
-    },
-    {
-      'name': 'Puesto Policial - Av. Túpac Amaru',
-      'lat': -11.9250,
-      'lng': -77.0670,
+      'name': 'C.I.E. PNP Collique',
+      'lat': -11.9144,
+      'lng': -77.0290,
       'type': 'puesto',
       'phone': '(01) 558-2901',
       'emergency_phone': '105',
     },
     {
       'name': 'Serenazgo de Collique',
-      'lat': -11.9360,
-      'lng': -77.0760,
+      'lat': -11.9135,
+      'lng': -77.0275,
       'type': 'serenazgo',
       'phone': '(01) 575-4321',
       'emergency_phone': '116',
     },
     {
-      'name': 'Comisaría de Comas',
-      'lat': -11.9410,
-      'lng': -77.0650,
+      'name': 'Comisaría PNP La Pascana',
+      'lat': -11.9350,
+      'lng': -77.0458,
+      'type': 'comisaria',
+      'phone': '(01) 562-3456',
+      'emergency_phone': '105',
+    },
+    {
+      'name': 'Comisaría PNP Santa Luzmila',
+      'lat': -11.9443,
+      'lng': -77.0663,
+      'type': 'comisaria',
+      'phone': '(01) 536-1842',
+      'emergency_phone': '105',
+    },
+    {
+      'name': 'Comisaría PNP Universitaria',
+      'lat': -11.9475,
+      'lng': -77.0600,
       'type': 'comisaria',
       'phone': '(01) 536-4321',
       'emergency_phone': '105',
     },
-    {
-      'name': 'Base Policial - Collique Alto',
-      'lat': -11.9440,
-      'lng': -77.0830,
-      'type': 'puesto',
-      'phone': '(01) 558-3700',
-      'emergency_phone': '105',
-    },
   ];
 
-  /// Colegios y centros educativos en Collique.
+  /// Colegios y centros educativos dentro del área real de Collique.
   static List<Map<String, dynamic>> get schools => [
     {
       'name': 'I.E. N° 2099 - Collique',
-      'lat': -11.9305,
-      'lng': -77.0710,
+      'lat': -11.9165,
+      'lng': -77.0325,
       'type': 'colegio',
     },
     {
       'name': 'I.E. San Martín de Porres',
-      'lat': -11.9340,
-      'lng': -77.0745,
+      'lat': -11.9120,
+      'lng': -77.0275,
       'type': 'colegio',
     },
     {
       'name': 'I.E. Santa Rosa de Collique',
-      'lat': -11.9375,
-      'lng': -77.0780,
+      'lat': -11.9095,
+      'lng': -77.0315,
       'type': 'colegio',
     },
     {
       'name': 'I.E. Los Olivos de Collique',
-      'lat': -11.9360,
-      'lng': -77.0755,
+      'lat': -11.9195,
+      'lng': -77.0300,
       'type': 'colegio',
     },
     {
       'name': 'I.E. Señor de los Milagros',
-      'lat': -11.9400,
-      'lng': -77.0810,
+      'lat': -11.9135,
+      'lng': -77.0200,
       'type': 'colegio',
     },
     {
       'name': 'I.E. Mariscal Cáceres',
-      'lat': -11.9285,
-      'lng': -77.0695,
+      'lat': -11.9165,
+      'lng': -77.0370,
       'type': 'colegio',
     },
   ];
 
-  /// Parques y áreas verdes de Collique.
+  /// Parques y áreas verdes de Collique (Parque Central en su ubicación real).
   static List<Map<String, dynamic>> get parks => [
     {
       'name': 'Parque Central de Collique',
-      'lat': -11.9325,
-      'lng': -77.0734,
-      'type': 'parque',
-    },
-    {
-      'name': 'Parque Los Olivos',
-      'lat': -11.9355,
-      'lng': -77.0755,
+      'lat': -11.9068,
+      'lng': -77.0347,
       'type': 'parque',
     },
     {
       'name': 'Parque Túpac Amaru',
-      'lat': -11.9270,
-      'lng': -77.0690,
+      'lat': -11.9160,
+      'lng': -77.0365,
+      'type': 'parque',
+    },
+    {
+      'name': 'Parque Los Olivos',
+      'lat': -11.9190,
+      'lng': -77.0300,
       'type': 'parque',
     },
     {
       'name': 'Parque Collique Alto',
-      'lat': -11.9430,
-      'lng': -77.0835,
+      'lat': -11.9075,
+      'lng': -77.0210,
       'type': 'parque',
     },
     {
       'name': 'Losa Deportiva Collique',
-      'lat': -11.9385,
-      'lng': -77.0795,
+      'lat': -11.9110,
+      'lng': -77.0235,
       'type': 'parque',
     },
   ];
 
-  /// Mercados y centros comerciales de Collique.
+  /// Mercados reales de Collique y zonas cercanas.
   static List<Map<String, dynamic>> get markets => [
     {
-      'name': 'Mercado de Collique',
-      'lat': -11.9300,
-      'lng': -77.0720,
+      'name': 'Mercado Central 1° Zona de Collique',
+      'lat': -11.9154,
+      'lng': -77.0330,
+      'type': 'mercado',
+    },
+    {
+      'name': 'Mercado 12 de Febrero',
+      'lat': -11.9116,
+      'lng': -77.0220,
       'type': 'mercado',
     },
     {
       'name': 'Mercado Santa Luzmila',
-      'lat': -11.9375,
-      'lng': -77.0600,
-      'type': 'mercado',
-    },
-    {
-      'name': 'Mercado Los Olivos',
-      'lat': -11.9350,
-      'lng': -77.0750,
+      'lat': -11.9440,
+      'lng': -77.0655,
       'type': 'mercado',
     },
   ];
 
-  /// Centros de salud y postas médicas.
+  /// Centros de salud reales de Collique (Hospital Bernales en su ubicación).
   static List<Map<String, dynamic>> get healthCenters => [
     {
       'name': 'Hospital Sergio Bernales',
-      'lat': -11.9312,
-      'lng': -77.0698,
+      'lat': -11.9141,
+      'lng': -77.0375,
       'type': 'hospital',
       'phone': '(01) 558-0101',
     },
     {
+      'name': 'Policlínico Cesmyn',
+      'lat': -11.9136,
+      'lng': -77.0399,
+      'type': 'postas',
+      'phone': '(01) 558-0200',
+    },
+    {
       'name': 'Centro de Salud Collique',
-      'lat': -11.9330,
-      'lng': -77.0730,
+      'lat': -11.9145,
+      'lng': -77.0320,
       'type': 'postas',
       'phone': '(01) 558-0300',
     },
     {
-      'name': 'Posta Médica Los Olivos',
-      'lat': -11.9365,
-      'lng': -77.0745,
-      'type': 'postas',
-      'phone': '(01) 558-0400',
-    },
-    {
       'name': 'Centro de Salud Santa Luzmila',
-      'lat': -11.9385,
-      'lng': -77.0595,
+      'lat': -11.9445,
+      'lng': -77.0655,
       'type': 'postas',
       'phone': '(01) 536-1800',
     },

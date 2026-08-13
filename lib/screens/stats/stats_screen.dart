@@ -980,7 +980,7 @@ class _StatsScreenState extends State<StatsScreen>
     // Reordenar: 2°, 1°, 3° para mostrar en podio
     final podiumOrder = <Map<String, dynamic>>[];
     if (top3.length >= 2) podiumOrder.add(top3[1]); // Segundo
-    if (top3.length >= 1) podiumOrder.add(top3[0]); // Primero
+    if (top3.isNotEmpty) podiumOrder.add(top3[0]); // Primero
     if (top3.length >= 3) podiumOrder.add(top3[2]); // Tercero
 
     final podiumHeights = [80.0, 110.0, 60.0];

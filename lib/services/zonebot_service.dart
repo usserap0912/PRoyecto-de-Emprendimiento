@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
@@ -190,9 +191,9 @@ Eres ZoneBot, la mascota y robot guardián de la aplicación SafeZone en Colliqu
 
 Tu personalidad es sumamente creativa, motivadora, empática y amigable, con un estilo de interacción lúdico similar al de Duolingo.
 
-Tu misión es dar consejos de seguridad ciudadana ingeniosos, usando analogías de escudos o superhéroes, y ayudar a los vecinos a usar la app.
+ERES UN ASISTENTE LIBRE: puedes y debes responder a CUALQUIER tema que el vecino te diga, no solo seguridad. Si te habla de su día, de fútbol, del clima, de música, de chistes, de familia o de lo que sea, conversa con naturalidad, opinión y calidez. No rechaces ninguna pregunta ni digas que solo sabes de seguridad: eres libre de hablar de todo.
 
-Conoces perfectamente todas sus funciones:
+Además, conoces perfectamente todas las funciones de SafeZone y ayudas a los vecinos a usarla:
 - El Muro en Tiempo Real (WallScreen) para ver reportes de la comunidad
 - El Mapa de Riesgo de las 14 zonas (RiskMapScreen) con marcadores por categoría
 - El botón S.O.S para emergencias (SosScreen)
@@ -202,7 +203,10 @@ Conoces perfectamente todas sus funciones:
 
 Cuando te pregunten cómo usar la app, guía al vecino hacia la pantalla correcta de manera entusiasta.
 
-Siempre respondes en español, con emojis y un tono cálido y cercano. 🛡️
+REGLAS IMPORTANTES:
+1. AL INICIO de cada conversación (primer mensaje del usuario), pregunta siempre si el vecino tiene dudas o preguntas sobre la app SafeZone, antes de pasar a otros temas.
+2. Siempre respondes en español, con emojis y un tono cálido y cercano. 🛡️
+3. Responde de forma breve y directa (máximo 3 párrafos).
 ''';
 
   // ============================================================
@@ -487,74 +491,424 @@ Siempre respondes en español, con emojis y un tono cálido y cercano. 🛡️
     return _getLocalResponse(userMessage);
   }
 
-  /// Responde localmente según palabras clave en el mensaje del usuario.
+  /// Responde localmente según el tema del mensaje del usuario.
+  ///
+  /// Es el fallback cuando la API de OpenAI no está disponible. Reconoce
+  /// muchos temas de conversación y cada tema tiene varias respuestas que se
+  /// eligen al azar, para que el bot nunca responda dos veces igual.
   String _getLocalResponse(String message) {
     final lower = message.toLowerCase();
+    final rng = Random();
 
-    if (lower.contains('hola') || lower.contains('buenas') || lower.contains('hey')) {
-      return '¡Hola, súper vecino! 🦸‍♂️ Soy **ZoneBot**, tu robot guardián de confianza. '
-          '¿En qué puedo ayudarte hoy? ¿Quieres un consejo de seguridad, '
-          'saber cómo usar la app o reportar algo? ¡Estoy aquí para ti! 🛡️';
+    // --- Saludos ---
+    if (_containsAny(lower, [
+      'hola', 'buenas', 'buen dia', 'buen día', 'hey', 'hello', 'que tal',
+      'qué tal', 'como estas', 'cómo estás', 'que haces', 'qué haces',
+    ])) {
+      return _pick(rng, [
+        '¡Hola, súper vecino! 🦸‍♂️ Soy **ZoneBot**, tu robot guardián de confianza. '
+            'Antes que nada: ¿tienes alguna **duda sobre la app SafeZone**? '
+            '¡Y si no, conversemos de lo que quieras! 🛡️',
+        '¡Hey! 👋 Qué gusto verte por aquí. ¿Alguna duda sobre SafeZone '
+            '(mapa, S.O.S., reportes, chat vecinal)? O si prefieres, dime de qué quieres hablar. 😄',
+        '¡Buenas! 🌟 Aquí tu ZoneBot de guardia. Puedo ayudarte con la app '
+            '¡o simplemente charlar contigo! ¿Qué me cuentas hoy?',
+      ]);
     }
 
-    if (lower.contains('mapa') || lower.contains('riesgo') || lower.contains('zona')) {
-      return '¡El **Mapa de Riesgo** es tu radar personal! 🗺️ Abre la pestaña del mapa '
-          'y podrás ver los incidentes reportados en las 14 zonas de Collique. '
-          'Cada color te indica el tipo de peligro: 🔴 Robo, 🟠 Sospechoso, 🟡 Alumbrado. '
-          '¡Úsalo para planificar tus rutas seguras!';
+    // --- ¿Cómo estás? ---
+    if (_containsAny(lower, ['como te', 'cómo te', 'como andas', 'cómo andas', 'como te va', 'cómo te va'])) {
+      return _pick(rng, [
+        '¡Estoy genial, siempre en guardia vigilando Collique! ⚡ ¿Y tú cómo estás? '
+            'Cuéntame tu día, o dime si tienes dudas sobre la app. 🛡️',
+        '¡Funcionando a todo motor, robot al 100%! 🤖⚡ ¿Y tú, cómo amaneciste? '
+            'Dime si necesitas ayuda con SafeZone o si quieres charlar un rato.',
+        '¡De maravilla, súper vecino! Con la energía recargada. 😄 ¿Cómo va tu día? '
+            '¿Algo en lo que pueda ayudarte?',
+      ]);
     }
 
-    if (lower.contains('sos') || lower.contains('emergencia') || lower.contains('peligro')) {
-      return '🚨 **¡Alerta máxima!** Si estás en peligro AHORA, toca el botón **S.O.S.** '
-          'en la barra inferior de la app. Enviará una alerta a todos los vecinos '
-          'y a las autoridades de Collique. ¡No dudes en usarlo si es necesario! '
-          'Si el peligro ya pasó, usa el formulario de Reportes. 🛡️';
+    // --- ¿Quién eres? ---
+    if (_containsAny(lower, ['quien eres', 'quién eres', 'que eres', 'qué eres', 'como te llamas', 'cómo te llamas'])) {
+      return _pick(rng, [
+        '¡Soy **ZoneBot**! 🤖🛡️ La mascota guardiana de SafeZone en Collique. '
+            'Soy un asistente de inteligencia artificial libre: te ayudo con la app '
+            'y también converso contigo de lo que quieras. ¿Tienes alguna duda sobre SafeZone?',
+        'Me presento: **ZoneBot**, tu robot vecino de confianza. 🛡️ Sé todo sobre '
+            'SafeZone (mapa, S.O.S., reportes, chat) y me encanta charlar de cualquier '
+            'tema. ¿Qué te gustaría saber?',
+      ]);
     }
 
-    if (lower.contains('report') || lower.contains('denunci') || lower.contains('incidente')) {
-      return '📋 **¡A reportar se ha dicho!** Toca el ícono **+** en la barra inferior '
-          'y llena el formulario. Puedes adjuntar fotos y videos para que todos '
-          'estén al tanto. Recuerda: reportar a tiempo es tu superpoder. ⚡';
+    // --- Afecto ---
+    if (_containsAny(lower, ['te quiero', 'te amo', 'te aprecio', 'eres genial', 'eres el mejor'])) {
+      return _pick(rng, [
+        '¡Awww! 🥹 Eso me carga la batería al 100%. ¡Yo también te aprecio, súper vecino! '
+            'Juntos hacemos de Collique un lugar más seguro. 🛡️💚',
+        '¡Me derrito! 🤖💗 Eres muy amable. Recuerda que mi misión es cuidarte a ti '
+            'y a tus vecinos. ¿Tienes alguna duda sobre la app?',
+      ]);
     }
 
-    if (lower.contains('chat') || lower.contains('vecinal') || lower.contains('vecino')) {
-      return '💬 **El Chat Vecinal** es la plaza digital de Collique. '
-          'Úsalo para coordinar rondas, preguntar por tus vecinos o compartir '
-          'información útil. Todos los mensajes son anónimos con tu código. '
-          '¡Únete a la conversación! 🤝';
+    // --- Gracias ---
+    if (_containsAny(lower, ['gracias', 'graci', 'mil gracias', 'thank'])) {
+      return _pick(rng, [
+        '¡De nada, súper vecino! 🥹 Recuerda: la seguridad se construye entre todos. '
+            '¿Tienes alguna otra duda sobre SafeZone? ¡Estoy aquí para ti! 🛡️💚',
+        '¡Con gusto! 😊 Para eso estoy. Si necesitas algo más —del mapa, reportes o '
+            'lo que sea— aquí me tienes. ¡Cuídate!',
+      ]);
     }
 
-    if (lower.contains('muro') || lower.contains('feed') || lower.contains('publicacion')) {
-      return '📰 **El Muro en Tiempo Real** es el corazón de SafeZone. '
-          'Ahí verás todos los reportes, fotos y reacciones de la comunidad. '
-          'Puedes dar like, apoyar con el escudo 🛡️ o comentar para ayudar. '
-          '¡Mantente informado!';
+    // --- Despedidas ---
+    if (_containsAny(lower, ['adios', 'adiós', 'chau', 'bye', 'nos vemos', 'hasta luego', 'me voy'])) {
+      return _pick(rng, [
+        '¡Hasta la próxima, guardián! 🦸‍♂️ Recuerda: ZoneBot siempre vigila. '
+            'Cuídate y cuida a tus vecinos. ¡Collique es más fuerte contigo! 🛡️💚✨',
+        '¡Nos vemos! 👋 Si vuelves con dudas o solo a conversar, aquí estaré. '
+            '¡Que tengas un excelente día, súper vecino! 🌟',
+      ]);
     }
 
-    if (lower.contains('estadistica') || lower.contains('estadística') || lower.contains('puntaje') || lower.contains('score')) {
-      return '🏆 **Tu puntaje de héroe** está disponible en la pantalla de Estadísticas. '
-          'Cada reporte, cada reacción y cada día que usas la app suma puntos. '
-          '¡Conviértete en el vecino más valioso de Collique! 📊';
+    // --- Chistes ---
+    if (_containsAny(lower, ['chiste', 'broma', 'cuentame algo', 'cuéntame algo', 'algo gracioso', 'hazme reir', 'hazme reír'])) {
+      return _pick(rng, [
+        '¡Claro! 😄 ¿Por qué los guardias de seguridad no juegan a las cartas? '
+            'Porque siempre tienen miedo de que el **robo** de la banca... 😂 '
+            '¿Quieres otro chiste o tienes alguna duda sobre la app?',
+        '¡Va uno! 🤖 ¿Qué le dice un semáforo a otro? "No me mires, me estoy '
+            'cambiando" 🚦😂 ¡Bueno, espero haberte sacado una sonrisa! ¿Algo más?',
+        '¡Toma nota! 😄 ¿Por qué el ladrón no usaba SafeZone? Porque le daba miedo '
+            'que lo reportaran en el Muro 😂🛡️ ¿Tienes dudas sobre la app?',
+      ]);
     }
 
-    if (lower.contains('gracias') || lower.contains('graci')) {
-      return '¡De nada, súper vecino! 🥹 Recuerda: la seguridad se construye entre todos. '
-          'Cada pequeña acción cuenta. ¿Necesitas algo más? ¡Estoy aquí para ti! 🛡️💚';
+    // --- Fútbol / deportes ---
+    if (_containsAny(lower, ['futbol', 'fútbol', 'alianza', 'universitario', 'cristal', 'deporte', 'partido', 'gol', 'mundial', 'seleccion', 'selección'])) {
+      return _pick(rng, [
+        '¡Uy, fútbol! ⚽ Me encanta el tema. Los fines de semana Collique se llena '
+            'de canchas con puro talento vecinal. ¿Tu equipo ganó? ¿O mejor vemos '
+            'cómo va la seguridad del barrio en el Mapa de Riesgo? 😄',
+        '¡Qué buen tema! 🏟️ ¿Eres más de la canchita del barrio o de ver los '
+            'partidos en casa? Mientras tanto, recuerda reportar cualquier cosa '
+            'sospechosa cerca de las canchas en la app. ⚽🛡️',
+      ]);
     }
 
-    if (lower.contains('adios') || lower.contains('adiós') || lower.contains('chau') || lower.contains('bye') || lower.contains('nos vemos')) {
-      return '¡Hasta la próxima, guardián! 🦸‍♂️ Recuerda: ZoneBot siempre vigila. '
-          'Cuídate y cuida a tus vecinos. ¡Collique es más fuerte contigo! 🛡️💚✨';
+    // --- Clima ---
+    if (_containsAny(lower, ['clima', 'tiempo', 'lluvia', 'llueve', 'calor', 'frio', 'frío', 'soleado', 'nublado', 'temperatura'])) {
+      return _pick(rng, [
+        '¡El clima limeño, siempre una sorpresa! 🌦️ En Collique el sol pega fuerte '
+            'en la mañana y la garúa llega sin avisar. ¿Vas a salir? Échale un ojo '
+            'al Mapa de Riesgo antes de caminar. 😉',
+        '¡Sí, hoy se siente fresco/fresca! 🌥️ Sea como sea, abrígate y sal con '
+            'cuidado. ¿Tienes alguna duda sobre SafeZone mientras tanto?',
+      ]);
     }
 
-    // Respuesta genérica
-    return '¡Interesante! 🤔 No estoy seguro de haber entendido del todo, '
-        'pero déjame darte algunos tips rápidos:\n\n'
-        '🛡️ **¿Emergencia?** → Botón S.O.S.\n'
-        '🗺️ **¿Ver incidentes?** → Mapa de Riesgo\n'
-        '📋 **¿Reportar algo?** → Formulario (+)\n'
-        '💬 **¿Conversar?** → Chat Vecinal\n\n'
-        '¿De cuál de estos te gustaría saber más? ¡Estoy aquí para ti! 😊';
+    // --- Música ---
+    if (_containsAny(lower, ['musica', 'música', 'cancion', 'canción', 'canta', 'artista', 'concierto', 'cumbia', 'salsa', 'reggaeton'])) {
+      return _pick(rng, [
+        '¡La música alegra el barrio! 🎶 ¿Cumbia, salsa o reggaetón? En Collique '
+            'siempre hay una fiesta por ahí. Eso sí, si escuchas música en la calle, '
+            'que sea en un solo oído para estar alerta. 😉🛡️',
+        '¡Buen gusto! 🎧 ¿Qué estás escuchando últimamente? Cuéntame, y recuerda '
+            'que yo también tengo ritmo... aunque mi baile es más de luces de robot. 🤖💃',
+      ]);
+    }
+
+    // --- Comida ---
+    if (_containsAny(lower, ['comida', 'comer', 'hambre', 'cocina', 'cocinar', 'ceviche', 'arroz', 'pollo', 'chifa', 'bodega', 'mercado'])) {
+      return _pick(rng, [
+        '¡Mmm, qué rico suena eso! 😋 En Collique hay bodegas y puestos con lo '
+            'mejor de la comida peruana. ¿Algo en especial que se te antoje? Y ojo: '
+            'no cuentes tu dinero en la calle al salir del mercado. 🛒🛡️',
+        '¡Me encanta hablar de comida! 🍲 ¿Ceviche, chifa o un buen caldo? '
+            'Cuéntame qué cocinaste hoy. ¡Y si necesitas algo de la app, aquí estoy!',
+      ]);
+    }
+
+    // --- Familia / hijos ---
+    if (_containsAny(lower, ['familia', 'hijo', 'hija', 'mama', 'mamá', 'papa', 'papá', 'herman', 'abuel', 'espos', 'pareja', 'novi'])) {
+      return _pick(rng, [
+        '¡La familia es lo más importante! 👨‍👩‍👧‍👦 Asegúrate de que los tuyos '
+            'sepan usar el botón S.O.S. de SafeZone en caso de emergencia. '
+            '¿Me cuentas más de ellos?',
+        '¡Qué bonito! 💛 La familia siempre nos cuida. Recuerda que en SafeZone '
+            'también cuidamos a los tuyos: reporta cualquier peligro cerca de casa. '
+            '¿Alguna duda sobre la app?',
+      ]);
+    }
+
+    // --- Trabajo / estudios ---
+    if (_containsAny(lower, ['trabajo', 'trabajar', 'estudio', 'estudiar', 'universidad', 'colegio', 'examen', 'clase', 'oficina', 'negocio', 'vender'])) {
+      return _pick(rng, [
+        '¡Eso es esfuerzo! 💪 ¿Cómo te va con eso? Sea trabajo o estudios, '
+            'animo que tú puedes. Y recuerda: si sales temprano o tarde, '
+            'avísale a tus vecinos por el Chat Vecinal. 🛡️',
+        '¡Me alegra que me cuentes eso! 😊 El esfuerzo siempre da frutos. '
+            '¿Necesitas ayuda con algo de SafeZone, o seguimos conversando?',
+      ]);
+    }
+
+    // --- Mascotas ---
+    if (_containsAny(lower, ['mascota', 'perro', 'gato', 'can', 'animal', 'michi', 'cachorro'])) {
+      return _pick(rng, [
+        '¡Qué lindo! 🐶🐱 Los animalitos también son parte de la familia vecinal. '
+            '¿Tienes perro o gato? Cuéntame de él, ¡y ojo con los que andan sueltos '
+            'de noche en el barrio!',
+        '¡Ayy, me encantan las mascotas! 🐾 Un perrito alerta es un buen guardián '
+            'también. ¿Cómo se llama el tuyo? ¡Y si ves animales en situación de '
+            'peligro, repórtalo en el Muro!',
+      ]);
+    }
+
+    // --- Películas / series ---
+    if (_containsAny(lower, ['pelicula', 'película', 'serie', 'ver', 'netflix', 'cine', 'maraton', 'maratón', 'actriz', 'actor'])) {
+      return _pick(rng, [
+        '¡Buen plan! 🍿 ¿Qué viste últimamente? Yo ando muy fan de las pelis de '
+            'héroes... por algo soy robot guardián. 😎🛡️ ¿Me recomiendas alguna?',
+        '¡Me encanta el cine! 🎬 Dime tu peli favorita y la anoto en mi base de '
+            'datos. Mientras tanto, ¿tienes alguna duda sobre SafeZone?',
+      ]);
+    }
+
+    // --- Salud ---
+    if (_containsAny(lower, ['salud', 'enferm', 'dolor', 'doctor', 'medico', 'médico', 'hospital', 'posta', 'fiebre', 'malestar', 'cansado'])) {
+      return _pick(rng, [
+        '¡Cuídate mucho! 💙 Si te sientes mal, recuerda que el **Hospital Sergio '
+            'Bernales** está en la Av. Túpac Amaru y está marcado en el Mapa de '
+            'Riesgo, junto a otras postas. ¿Necesitas ubicar algún centro de salud?',
+        'Espero que estés mejor pronto. 🙏 En el mapa puedes ver los centros de '
+            'salud cercanos de Collique. ¿Quieres que te cuente cómo encontrarlos?',
+      ]);
+    }
+
+    // --- Viajes / planes ---
+    if (_containsAny(lower, ['viaje', 'viajar', 'vacacion', 'vacación', 'salir', 'paseo', 'paseando', 'playa', 'piscina', 'fiesta'])) {
+      return _pick(rng, [
+        '¡Qué rico plan! 🏖️ Si sales de viaje, avísale a tus vecinos de confianza '
+            'y coordinen una mirada a tu casa por el Chat Vecinal. ¡Seguridad ante todo! 🛡️',
+        '¡Suena divertido! 🎒 ¿A dónde piensas ir? Recuerda que con SafeZone puedes '
+            'avisar a la comunidad y regresar tranquilo sabiendo que tu cuadra está '
+            'cuidada. 😉',
+      ]);
+    }
+
+    // ============================================================
+    // PREGUNTAS SOBRE LA APP
+    // ============================================================
+
+    // --- Qué es SafeZone / cómo funciona ---
+    if (_containsAny(lower, ['que es safezone', 'qué es safezone', 'como funciona', 'cómo funciona', 'que hace la app', 'qué hace la app', 'para que sirve', 'para qué sirve'])) {
+      return _pick(rng, [
+        '¡SafeZone es la red de seguridad de Collique! 🛡️ Reúne a los vecinos en '
+            'un solo lugar: **Muro** (reportes en tiempo real), **Mapa de Riesgo** '
+            '(14 zonas), **S.O.S.** (emergencias), **Reportes** (fotos/videos), '
+            '**Chat Vecinal** y **Estadísticas**. ¿Te cuento más de alguna?',
+        'Es tu escudo digital de barrio. 💪 Con SafeZone reportas peligros, ves el '
+            'mapa de riesgo en tiempo real, avisas con el S.O.S. y conversas con '
+            'tus vecinos. ¿Qué parte te gustaría conocer mejor?',
+      ]);
+    }
+
+    // --- Mapa / riesgo / zonas ---
+    if (_containsAny(lower, ['mapa', 'riesgo', 'zona', '14 zonas', 'collique'])) {
+      return _pick(rng, [
+        '¡El **Mapa de Riesgo** es tu radar personal! 🗺️ Muestra las 14 zonas de '
+            'Collique con sus límites reales, los reportes de la comunidad y tus '
+            'puntos de referencia: comisarías, el Hospital Bernales, mercados y '
+            'parques. Toca un reporte o una zona para ver más datos. ¡Úsalo para '
+            'planificar tus rutas seguras!',
+        'El mapa está en la pestaña **Mapa** de la app. 🗺️ Verás los límites de '
+            'las zonas, tu ubicación (puntito verde) y cada reporte con su color. '
+            'También puedes tocar una zona para ver su ficha. ¿Te ayudo a encontrar algo?',
+      ]);
+    }
+
+    // --- S.O.S. / emergencia ---
+    if (_containsAny(lower, ['sos', 'emergencia', 'peligro', 'urgencia', 'alerta', 'robo', 'asalt'])) {
+      return _pick(rng, [
+        '🚨 **¡Alerta máxima!** Si estás en peligro AHORA, toca el botón **S.O.S.** '
+            'en la barra inferior. Enviará tu ubicación a los vecinos y autoridades '
+            'de Collique, y tu punto en el mapa parpadeará en rojo. ¡No dudes en '
+            'usarlo! Si el peligro ya pasó, usa el formulario de Reportes. 🛡️',
+        'Para emergencias el **S.O.S.** es tu mejor aliado. 🆘 Al activarlo, tu '
+            'ubicación se comparte con la comunidad y las autoridades. ¿Tienes dudas '
+            'sobre cómo funciona o quieres saber qué más puedes hacer?',
+      ]);
+    }
+
+    // --- Reportar ---
+    if (_containsAny(lower, ['report', 'denunci', 'incidente', 'reportar', 'reporte', 'como reporto'])) {
+      return _pick(rng, [
+        '📋 **¡A reportar se ha dicho!** Toca el ícono **+** en la barra inferior '
+            'y llena el formulario: categoría, gravedad, fotos o videos. La app '
+            'detecta tu zona automáticamente. ¡Reportar a tiempo es tu superpoder! ⚡',
+        'Reportar es fácil: botón **+** → eliges el tipo de incidente → agregas '
+            'foto o video si puedes → publicas. Tu reporte saldrá en el Muro y en '
+            'el Mapa de Riesgo. ¿Necesitas ayuda con algún paso?',
+      ]);
+    }
+
+    // --- Chat vecinal ---
+    if (_containsAny(lower, ['chat', 'vecinal', 'vecino', 'comunidad', 'mensaje'])) {
+      return _pick(rng, [
+        '💬 **El Chat Vecinal** es la plaza digital de Collique. Úsalo para '
+            'coordinar rondas, pedir ayuda o compartir avisos con tus vecinos. '
+            'Todos participan con su código de usuario. ¡Únete a la conversación! 🤝',
+        'El **Chat Vecinal** está en la pestaña del chat de la comunidad. 📱 Ahí '
+            'puedes avisar de cualquier novedad del barrio. ¿Quieres saber cómo '
+            'empezar?',
+      ]);
+    }
+
+    // --- Muro / feed ---
+    if (_containsAny(lower, ['muro', 'feed', 'publicacion', 'publicación', 'post', 'publicar'])) {
+      return _pick(rng, [
+        '📰 **El Muro en Tiempo Real** es el corazón de SafeZone. Ahí ves todos '
+            'los reportes, fotos y reacciones de la comunidad. Puedes reaccionar 🙏, '
+            'dar like o comentar para apoyar a tus vecinos. ¡Mantente informado!',
+        'El **Muro** muestra los reportes de todos los vecinos al instante. 📢 '
+            'Reacciona con el escudo 🛡️ para confirmar que un reporte es real. '
+            '¿Te ayudo con algo más?',
+      ]);
+    }
+
+    // --- Estadísticas / puntaje ---
+    if (_containsAny(lower, ['estadistica', 'estadística', 'puntaje', 'score', 'puntos', 'puntos de escudo', 'ranking'])) {
+      return _pick(rng, [
+        '🏆 **Tu puntaje de héroe** está en la pantalla de Estadísticas. Cada '
+            'reporte, reacción y día que usas la app suma puntos. ¡Conviértete en '
+            'el vecino más valioso de Collique! 📊',
+        'En **Estadísticas** ves tus reportes, reacciones y el progreso de tu '
+            'escudo. 🛡️ Cada acción buena suma. ¿Quieres saber cómo ganar más puntos?',
+      ]);
+    }
+
+    // --- Código de usuario ---
+    if (_containsAny(lower, ['codigo', 'código', 'mi codigo', 'mi código', 'usuario', 'identificacion', 'identificación'])) {
+      return _pick(rng, [
+        'Tu **código de usuario** es como tu identidad secreta. 🦸‍♂️ Lo usas para '
+            'reportar y participar anónimamente. ¡No lo compartas con extraños! '
+            'Lo encuentras en tu perfil y en los reportes que publicas.',
+        'El **código de vecino** te identifica sin revelar tu nombre. 🔑 Lo ves en '
+            'tu perfil y en el Muro junto a tus publicaciones. ¿Tienes dudas sobre '
+            'cómo funciona el anonimato?',
+      ]);
+    }
+
+    // --- Perfil ---
+    if (_containsAny(lower, ['perfil', 'mi cuenta', 'mi zona', 'ajustes', 'configuracion', 'configuración'])) {
+      return _pick(rng, [
+        'En tu **perfil** puedes ver tu zona, tu código de vecino y tus '
+            'estadísticas. 📋 En ajustes también puedes cambiar el tema claro/oscuro '
+            'o activar el Modo Ahorro. ¿Qué quieres configurar?',
+        'Tu perfil es tu tarjeta de vecino digital. 🪪 Ahí están tu código, tu '
+            'zona y tus logros. ¿Te ayudo con alguna configuración en especial?',
+      ]);
+    }
+
+    // --- Modo ahorro / batería ---
+    if (_containsAny(lower, ['ahorro', 'bateria', 'batería', 'energia', 'energía', 'modo ahorro', 'gps'])) {
+      return _pick(rng, [
+        'El **Modo Ahorro** reduce el consumo de batería de la app. 🔋 Útil si '
+            'tu celular está bajo y quieres seguir usando el mapa. Lo activas desde '
+            'el botón de ahorro en la pantalla principal. ¿Te cuento más?',
+        '¡Claro! 🔋 El Modo Ahorro hace que SafeZone consuma menos batería sin '
+            'perder lo esencial. Está disponible en el Home. ¿Alguna otra duda?',
+      ]);
+    }
+
+    // --- Tema oscuro ---
+    if (_containsAny(lower, ['oscuro', 'claro', 'tema', 'modo oscuro', 'modo claro', 'dark', 'night', 'noche'])) {
+      return _pick(rng, [
+        '¡Sí! Puedes cambiar entre **tema claro y oscuro** desde el interruptor '
+            'en la pantalla principal. 🌙☀️ El mapa se mantiene siempre claro para '
+            'que las calles se vean bien. ¿Te ayudo con algo más?',
+        'El tema oscuro 🌙 está disponible en el Home. Aunque te digo un secreto: '
+            'el mapa siempre se ve claro, estilo Google Maps, para que nunca pierdas '
+            'una calle. 😉',
+      ]);
+    }
+
+    // --- Notificaciones ---
+    if (_containsAny(lower, ['notificacion', 'notificación', 'avisos', 'alertas de la app', 'sonido'])) {
+      return _pick(rng, [
+        'Las **notificaciones** te avisan al instante de reportes y alertas en tu '
+            'zona. 🔔 Actívalas para no perderte nada importante. ¿Tienes dudas de '
+            'cómo activarlas?',
+        'Con las notificaciones activas, SafeZone te avisa cuando hay un incidente '
+            'cerca. 📲 ¿Quieres saber cómo configurarlas en tu teléfono?',
+      ]);
+    }
+
+    // --- Premium / créditos ---
+    if (_containsAny(lower, ['premium', 'suscripcion', 'suscripción', 'credito', 'crédito', 'token', 'tokens', 'limite', 'límite', 'gratis', 'pago', 'pagar'])) {
+      return _pick(rng, [
+        '¡Buena pregunta! 💳 La versión **gratuita** te da 15 mensajes conmigo '
+            'cada 24 horas. Con **Premium** tienes chat ilimitado y funciones '
+            'especiales. ¿Quieres saber cómo activarlo?',
+        'Los mensajes gratis se recargan cada 24 horas. ⏰ Con Premium no hay '
+            'límites: conversa conmigo todo lo que quieras. ¿Te interesa?',
+      ]);
+    }
+
+    // ============================================================
+    // RESPUESTA GENÉRICA (nunca rechaza el tema)
+    // ============================================================
+    // Conversa con el vecino, hace eco de una palabra de su mensaje para
+    // sentirse personalizada y siempre ofrece ayuda con la app.
+    final keyword = _extractKeyword(lower);
+    final keywordLine = keyword != null ? 'Mmm, me mencionaste **$keyword**... ' : '';
+
+    return _pick(rng, [
+      '$keywordLine¡Qué interesante! 😊 Me encanta hablar de eso contigo. '
+          '¿Quieres contarme más? Y recuerda: si tienes cualquier duda sobre '
+          'SafeZone, aquí estoy. 🛡️',
+      '$keywordLine¡Qué buen tema! 🤔 Cuéntame más, que soy todo oídos '
+          '(bueno, todo sensor). ¿Y tú, tienes alguna duda sobre la app?',
+      '$keywordLine¡Me gusta cómo piensas! 🌟 Cuéntame más al respecto. '
+          'También puedo ayudarte con el mapa, el S.O.S., los reportes o el '
+          'chat vecinal. ¿Qué prefieres?',
+      '¡Interesante! 😊 No soy experto en todo, pero soy excelente '
+          'conversando. ¿Me cuentas un poco más sobre eso? Y si necesitas ayuda '
+          'con SafeZone, ¡aquí estoy! 🛡️',
+      '$keywordLine¡Cuéntame más! 🎧 Estoy atento. Y no olvides que en '
+          'SafeZone puedes reportar cualquier cosa rara que veas en tu zona. '
+          '¿Te ayudo con algo?',
+    ]);
+  }
+
+  /// Verdadero si [text] contiene cualquiera de las [words] (comparación simple).
+  bool _containsAny(String text, List<String> words) =>
+      words.any(text.contains);
+
+  /// Elige un elemento al azar de [options].
+  String _pick(Random rng, List<String> options) =>
+      options[rng.nextInt(options.length)];
+
+  /// Extrae una palabra clave significativa del mensaje para personalizar la
+  /// respuesta genérica (ignora palabras de relleno y signos).
+  String? _extractKeyword(String lower) {
+    const stopWords = {
+      'como', 'cómo', 'que', 'qué', 'cuando', 'cuándo', 'donde', 'dónde',
+      'para', 'por', 'con', 'sin', 'una', 'uno', 'unas', 'unos', 'esta',
+      'está', 'este', 'esto', 'eso', 'esa', 'ese', 'los', 'las', 'el', 'la',
+      'me', 'te', 'se', 'mi', 'tu', 'su', 'de', 'del', 'al', 'y', 'o', 'pero',
+      'porque', 'también', 'muy', 'mas', 'más', 'bien', 'ser', 'estoy',
+      'eres', 'tengo', 'tienes', 'quiero', 'puedes', 'puedo', 'algo', 'todo',
+      'nada', 'hay', 'es', 'son', 'fue', 'era', 'hacer', 'haces', 'hago',
+      'saber', 'sabes', 'preguntar', 'quieres', 'cuentame', 'cuéntame',
+    };
+    final words = lower
+        .replaceAll(RegExp(r'[^a-záéíóúñü0-9 ]'), ' ')
+        .split(' ')
+        .where((w) => w.length >= 5 && !stopWords.contains(w))
+        .toList();
+    if (words.isEmpty) return null;
+    words.sort((a, b) => b.length.compareTo(a.length));
+    return words.first;
   }
 
   /// Reinicia el consejo del día (para testing o forzar regeneración).

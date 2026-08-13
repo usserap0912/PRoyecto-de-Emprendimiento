@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
@@ -35,6 +37,9 @@ class SafeZoneAppState extends State<SafeZoneApp> {
   // ================================================================
   static const String _prefsManualTheme = 'dark_mode_manual';
   bool _userHasManuallySet = false;
+
+  /// Timer del refresco automático del tema (día/noche).
+  Timer? _autoRefreshTimer;
 
   /// Determina si es de noche (entre 7PM y 7AM)
   static bool _isNightTime() {
@@ -91,7 +96,8 @@ class SafeZoneAppState extends State<SafeZoneApp> {
   /// Programa una actualización del tema automático cada 30 minutos.
   /// Solo aplica si el usuario no ha configurado manualmente.
   void _scheduleAutoRefresh() {
-    Future.delayed(const Duration(minutes: 30), () {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer(const Duration(minutes: 30), () {
       if (!mounted) return;
       if (!_userHasManuallySet) {
         final auto = _autoThemeMode();
@@ -119,6 +125,7 @@ class SafeZoneAppState extends State<SafeZoneApp> {
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     instance = null;
     super.dispose();
   }

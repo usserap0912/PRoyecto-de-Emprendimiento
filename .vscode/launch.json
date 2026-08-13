@@ -6,7 +6,7 @@
             "request": "launch",
             "type": "dart",
             "args": [
-                "--dart-define=OPENAI_API_KEY=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"
+                "--dart-define=OPENAI_API_KEY=${env:OPENAI_API_KEY}"
             ],
             "program": "lib/main.dart"
         },
@@ -15,7 +15,7 @@
             "request": "launch",
             "type": "dart",
             "args": [
-                "--dart-define=OPENAI_API_KEY=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"
+                "--dart-define=OPENAI_API_KEY=${env:OPENAI_API_KEY}"
             ],
             "program": "lib/main.dart"
         }

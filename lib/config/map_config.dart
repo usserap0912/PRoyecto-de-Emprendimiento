@@ -25,10 +25,16 @@ class MapConfig {
 
   static bool get hasMapTilerKey => mapTilerApiKey.trim().isNotEmpty;
 
-  /// Estilo claro. Con key → MapTiler streets; sin key → OpenStreetMap.
+  /// Estilo claro principal. Con key → MapTiler streets; sin key → OpenStreetMap.
   static String get lightTileUrl => hasMapTilerKey
       ? 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey'
-      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      : fallbackTileUrl;
+
+  /// URL de respaldo: OpenStreetMap (gratis, sin key, siempre disponible).
+  /// Se usa cuando el proveedor principal falla en tiempo de ejecución
+  /// (key agotada, revocada o error de red del proveedor).
+  static String get fallbackTileUrl =>
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   /// Estilo oscuro.
   /// NOTA: el plan gratuito de MapTiler NO incluye estilos oscuros
@@ -40,14 +46,15 @@ class MapConfig {
       ? '© MapTiler © OpenStreetMap contributors'
       : '© OpenStreetMap contributors';
 
-  /// Límites de Collique (el mapa no puede salir de aquí).
+  /// Límites reales de Collique (el mapa no puede salir de aquí).
+  /// Cubre desde la Av. Túpac Amaru (oeste) hasta la zona alta (este).
   static final LatLngBounds colliqueBounds = LatLngBounds(
-    const LatLng(-11.949, -77.090),
-    const LatLng(-11.918, -77.025),
+    const LatLng(-11.950, -77.095),
+    const LatLng(-11.898, -77.000),
   );
 
   /// Centro de Collique (punto seguro para iniciar la cámara).
-  static const LatLng colliqueCenter = LatLng(-11.9335, -77.0575);
+  static const LatLng colliqueCenter = LatLng(-11.9142, -77.0253);
 
   /// Restricción de cámara: el CENTRO del mapa siempre queda dentro de
   /// Collique, así el usuario no puede alejarse a otro distrito.

@@ -59,21 +59,15 @@ flutter run -d edge            # Microsoft Edge
 
 ### 1. Base de datos
 
-Ejecuta los scripts SQL en el Editor SQL de Supabase en este orden:
+Ejecuta el script SQL maestro en el Editor SQL de Supabase:
 
-1. `supabase_migration.sql` — Tablas principales:
-   - `profiles` — Perfiles anónimos de usuarios
-   - `reports` — Reportes de incidentes
-   - `reactions` — Reacciones emoji
-   - `chat_messages` — Mensajes del chat
-   - `sos_alerts` — Alertas de emergencia
+1. `supabase/sql_completo.sql` — Archivo único maestro que incluye:
+   - Tablas principales: `profiles`, `reports`, `reactions`, `chat_messages`, `sos_alerts`, `report_comments`, `safe_checkins`, `archived_reports` y `archived_reactions`
    - RLS policies, índices y triggers para contadores
+   - Minijuegos: `user_scores` con RLS y funciones `get_user_best_score` y `get_leaderboard`
+   - Columnas premium y suscripciones Mercado Pago (`is_premium`, `mercadopago_subscription_id`)
 
-2. `supabase_migration_games.sql` — Tabla de juegos (opcional):
-   - `user_scores` — Puntajes de minijuegos con RLS
-   - Funciones `get_user_best_score` y `get_leaderboard`
-
-3. Crear tabla de comentarios (si no existe):
+2. Crear tabla de comentarios (si no existe):
 ```sql
 CREATE TABLE IF NOT EXISTS report_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -170,17 +164,24 @@ El mapa usa **flutter_map** con tiles de **CartoDB** en dos estilos intercambiab
 
 | Estilo | URL |
 |--------|-----|
-| ☀️ Claro (Positron) | `https://{s}.basemaps.cartocdn.com/light_all/...` |
-| 🌙 Oscuro (Dark Matter) | `https://{s}.basemaps.cartocdn.com/dark_all/...` |
+| ☀️ Claro (MapTiler streets-v2) | `https://api.maptiler.com/maps/streets-v2/...` |
+| ☀️ Respaldo automático (OpenStreetMap) | `https://tile.openstreetmap.org/...` |
+
+**El mapa tiene doble protección contra fallos:**
+- Si la key de MapTiler se agota, es revocada o el proveedor falla, la app **cambia automáticamente a OpenStreetMap en tiempo real** (gratis, sin key) — el mapa nunca se queda en blanco.
+- Se muestra un aviso al usuario cuando ocurre el cambio y un indicador "Mapas OSM" en el panel superior.
 
 Incluye:
-- **14 zonas** de Collique con marcadores numerados Z1–Z14
-- **Puntos de referencia**: Hospital Sergio Bernales, Comisaría de Collique, Museo de los Colli
+- **14 zonas** de Collique con etiquetas Z1–Z14 (toca una para ver su información: nombre, riesgo y reportes)
+- **Puntos de referencia**: Hospital Sergio Bernales, Comisaría de Collique, Museo de los Colli, colegios, parques, mercados y centros de salud
+- **Calles, avenidas y jirones** visibles con sus nombres gracias a los tiles de MapTiler
+- **Zoom con los dedos** (pinch), doble toque, arrastre y rotación, con rango amplio (zoom 12–19)
+- **Pines tipo globo estilo Google Maps** para los reportes, con clustering y sombra
+- **Panel superior** con la zona actual: nombre, cantidad de reportes activos y nivel de riesgo
 - **Alertas de riesgo** con códigos de colores (verde/amarillo/naranja/rojo)
-- **Clustering** de marcadores con indicador numérico
 - **Límites de cámara** para no salir del área de Collique
-- **Bottom sheet de detalle** al tocar un marcador: categoría, nivel de riesgo, tiempo, imagen, descripción
-- **Confirmación comunitaria**: botón "Confirmar que es real 🛡️"
+- **Bottom sheet de detalle** al tocar un marcador: categoría, nivel de riesgo, tiempo, dirección, imagen, descripción y código del vecino
+- **Punto de ubicación del usuario** con anillo de pulso, color según el riesgo de su zona y parpadeo rojo cuando activa una alerta S.O.S.
 
 ---
 

@@ -10,6 +10,7 @@ import 'package:safezone/services/location_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/services/notification_service.dart';
+import 'package:safezone/services/sos_state_service.dart';
 import 'package:uuid/uuid.dart';
 
 class SosScreen extends StatefulWidget {
@@ -154,6 +155,8 @@ class _SosScreenState extends State<SosScreen>
     _countdownTimer?.cancel();
     HapticFeedback.mediumImpact();
     SoundService().stop(stopLooping: true);
+    // Notificar que el S.O.S. ya no está activo
+    SosStateService().setActive(false);
     if (mounted) {
       setState(() {
         _isCountingDown = false;
@@ -175,6 +178,9 @@ class _SosScreenState extends State<SosScreen>
       _isCountingDown = false;
       _isActivated = true;
     });
+
+    // Notificar a otras pantallas (ej: el Mapa) que el S.O.S. está activo
+    SosStateService().setActive(true);
 
     // Obtener ubicación (actualizar si no tenemos)
     final locationService = LocationService();
@@ -290,6 +296,8 @@ class _SosScreenState extends State<SosScreen>
   void _deactivateAlert() {
     SoundService().stop(stopLooping: true);
     HapticFeedback.mediumImpact();
+    // Notificar que el S.O.S. ya no está activo
+    SosStateService().setActive(false);
     if (mounted) {
       setState(() {
         _isActivated = false;

@@ -1,24 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/app.dart';
 import 'package:safezone/models/report.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('SafeZone app loads with title', (WidgetTester tester) async {
     await tester.pumpWidget(const SafeZoneApp());
+    // El título SafeZone aparece en el splash
     expect(find.text('SafeZone'), findsOneWidget);
+
+    // Avanzar el splash (4s) para que navegue y no queden timers pendientes
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('ZoneSelectionScreen has zones and continue button',
       (WidgetTester tester) async {
     await tester.pumpWidget(const SafeZoneApp());
+
+    // Esperar el splash (4s) para llegar a la selección de zona
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
     // El título SafeZone aparece
     expect(find.text('SafeZone'), findsOneWidget);
     // El botón CONTINUAR existe
     expect(find.text('CONTINUAR'), findsOneWidget);
-    // Al menos las primeras zonas existen en el árbol
-    expect(find.text('Zona 1'), findsWidgets);
-    expect(find.text('Zona 2'), findsWidgets);
+    // Las primeras zonas existen en el árbol
+    expect(find.text('1era Zona'), findsOneWidget);
+    expect(find.text('2da Zona'), findsOneWidget);
   });
 
   group('Report model', () {
@@ -32,8 +47,8 @@ void main() {
         'description': 'Test description',
         'image_url': null,
         'video_url': null,
-        'latitude': -11.9325,
-        'longitude': -77.0734,
+        'latitude': -11.9140,
+        'longitude': -77.0250,
         'address': 'Av. Collique',
         'tag': 'rojo',
         'status': 'activo',
@@ -102,8 +117,8 @@ void main() {
         zone: 5,
         category: 'sospechoso',
         description: 'Persona sospechosa merodeando',
-        latitude: -11.9350,
-        longitude: -77.0750,
+        latitude: -11.9130,
+        longitude: -77.0162,
         address: 'Av. Revolución',
         tag: 'amarillo',
         status: 'activo',
