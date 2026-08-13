@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +24,8 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _loadingFadeAnim;
 
   late final String _randomTip;
+
+  Timer? _navTimer;
 
   // 5 consejos de seguridad vecinal
   static const List<String> _safetyTips = [
@@ -89,7 +92,7 @@ class _SplashScreenState extends State<SplashScreen>
     _animController.forward();
 
     // Esperar 4 segundos antes de navegar
-    Future.delayed(const Duration(seconds: 4), () async {
+    _navTimer = Timer(const Duration(seconds: 4), () async {
       if (!mounted) return;
 
       // Verificar si ya existe un código de dispositivo guardado
@@ -125,6 +128,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    _navTimer?.cancel();
     _animController.dispose();
     super.dispose();
   }

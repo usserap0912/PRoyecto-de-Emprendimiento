@@ -37,7 +37,6 @@ class SafeZoneAppState extends State<SafeZoneApp> {
   // ================================================================
   static const String _prefsManualTheme = 'dark_mode_manual';
   bool _userHasManuallySet = false;
-
   /// Timer del refresco automático del tema (día/noche).
   Timer? _autoRefreshTimer;
 
