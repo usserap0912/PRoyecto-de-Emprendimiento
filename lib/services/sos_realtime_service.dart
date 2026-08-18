@@ -103,6 +103,7 @@ class SosRealtimeService {
       _rememberNotifiedAlert(alert.id);
     }
     final incoming = newAlerts.first;
+    if (kDebugMode) debugPrint('[SOS][received] alertId=${incoming.id}');
     incomingAlert.value = incoming;
     return incoming;
   }

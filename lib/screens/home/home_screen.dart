@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -401,7 +402,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     _incomingSosTimer?.cancel();
     setState(() => _incomingSosAlert = alert);
-    unawaited(_soundService.playSosReceivedAlert());
+    unawaited(
+      _soundService.playSosReceivedAlert().then((_) {
+        if (kDebugMode) debugPrint('[SOS][sound] played');
+      }),
+    );
     try {
       HapticFeedback.heavyImpact();
     } catch (_) {}

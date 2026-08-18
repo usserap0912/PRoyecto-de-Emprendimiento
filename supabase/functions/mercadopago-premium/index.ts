@@ -31,7 +31,7 @@ const supabase = createClient(
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
 function json(data: unknown, status = 200): Response {
@@ -39,31 +39,6 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-async function currentProfile(req: Request): Promise<
-  | { authUserId: string; userCode: string; zone: number }
-  | null
-> {
-  const authorization = req.headers.get("Authorization") || "";
-  if (!authorization.startsWith("Bearer ")) return null;
-
-  const token = authorization.slice("Bearer ".length);
-  const { data: authData, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !authData.user) return null;
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("user_code, zone")
-    .eq("auth_user_id", authData.user.id)
-    .single();
-  if (profileError || !profile) return null;
-
-  return {
-    authUserId: authData.user.id,
-    userCode: String(profile.user_code),
-    zone: Number(profile.zone),
-  };
 }
 
 // ============================================
@@ -144,9 +119,10 @@ serve(async (req) => {
         );
       }
 
-      const profile = await currentProfile(req);
-      if (!profile) return json({ error: "Sesión no autorizada" }, 401);
-      const { email } = await req.json();
+      const { userCode, zone, email } = await req.json();
+      if (!userCode) {
+        return json({ error: "userCode es requerido" }, 400);
+      }
 
       const notificationUrl = `${url.origin}/functions/v1/mercadopago-premium/webhook`;
       const backUrl = REDIRECT_URL || `${url.origin}/functions/v1/mercadopago-premium/return`;
@@ -155,7 +131,7 @@ serve(async (req) => {
         method: "POST",
         body: JSON.stringify({
           reason: "SafeZone Premium — suscripción mensual",
-          external_reference: refFor(profile.userCode, String(profile.zone)),
+          external_reference: refFor(userCode, String(zone || "")),
           payer_email: email || undefined,
           auto_recurring: {
             frequency: 1,
@@ -223,13 +199,13 @@ serve(async (req) => {
     // POST /cancel — Cancelar la suscripción del usuario
     // ============================================
     if (path === "cancel" && req.method === "POST") {
-      const profile = await currentProfile(req);
-      if (!profile) return json({ error: "Sesión no autorizada" }, 401);
+      const { userCode } = await req.json();
+      if (!userCode) return json({ error: "userCode es requerido" }, 400);
 
       const { data, error } = await supabase
         .from("profiles")
         .select("mercadopago_subscription_id")
-        .eq("auth_user_id", profile.authUserId)
+        .eq("user_code", userCode)
         .single();
 
       if (error || !data?.mercadopago_subscription_id) {
@@ -249,21 +225,23 @@ serve(async (req) => {
         return json({ error: res?.message || "Error cancelando la suscripción en Mercado Pago" }, 502);
       }
 
-      await setPremium(profile.userCode, subId, false);
+      await setPremium(userCode, subId, false);
       return json({ success: true, message: "Suscripción cancelada correctamente" });
     }
 
     // ============================================
-    // GET /status — Estado premium de la sesión autenticada
+    // GET /status?user_code=xxx — Estado premium
     // ============================================
     if (path === "status" && req.method === "GET") {
-      const profile = await currentProfile(req);
-      if (!profile) return json({ error: "Sesión no autorizada" }, 401);
+      const userCode = url.searchParams.get("user_code");
+      if (!userCode) {
+        return json({ error: "user_code es requerido" }, 400);
+      }
 
       const { data, error } = await supabase
         .from("profiles")
         .select("is_premium, premium_activated_at, mercadopago_subscription_id")
-        .eq("user_code", profile.userCode)
+        .eq("user_code", userCode)
         .single();
 
       if (error) return json({ is_premium: false });
@@ -277,7 +255,7 @@ serve(async (req) => {
           const active = pre.status === "authorized";
           if (active !== isPremium) {
             isPremium = active;
-            await setPremium(profile.userCode, String(subId), active);
+            await setPremium(userCode, String(subId), active);
           }
         }
       }

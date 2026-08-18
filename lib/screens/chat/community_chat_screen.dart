@@ -28,6 +28,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   // Para detectar mensajes nuevos y reproducir sonido
   int _previousMessageCount = 0;
   bool _initialLoadDone = false;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -98,14 +99,31 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
 
-    _messageController.clear();
-
-    // Sonido de enviar mensaje
-    SoundService().play('nav_tap');
-    HapticFeedback.selectionClick();
-
-    // El stream se encargará de agregar el mensaje cuando llegue del backend
-    await _chatService.sendMessage(widget.userCode, content);
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    try {
+      final inserted = await _chatService.sendMessage(widget.userCode, content);
+      if (!mounted) return;
+      setState(() {
+        if (!_messages.any((message) => message.id == inserted.id)) {
+          _messages = [..._messages, inserted]
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        }
+      });
+      _messageController.clear();
+      SoundService().play('nav_tap');
+      HapticFeedback.selectionClick();
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No pudimos enviar el mensaje. Intenta nuevamente.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
 
   @override
@@ -273,7 +291,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              onPressed: _sendMessage,
+              onPressed: _isSending ? null : _sendMessage,
               icon: const Icon(Icons.send_rounded, color: Colors.white),
             ),
           ),

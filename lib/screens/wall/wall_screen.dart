@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:safezone/theme/app_theme.dart';
@@ -36,14 +37,26 @@ class _WallScreenState extends State<WallScreen> {
   int _loadGeneration = 0;
   Timer? _expirationTimer;
 
+  List<Report> _mergeReports(Iterable<Report> incoming) {
+    return ReportService.mergeWallSnapshots(
+      _reports,
+      incoming,
+      filter: _activeTimeFilter,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadReports();
-    _subscribeToRealtime();
+    unawaited(_initializeWall());
     _createdReportSubscription = _reportService.createdReports.listen(
       _onReportCreated,
     );
+  }
+
+  Future<void> _initializeWall() async {
+    await _loadReports();
+    if (mounted) _subscribeToRealtime();
   }
 
   /// Carga inicial de reportes
@@ -56,13 +69,13 @@ class _WallScreenState extends State<WallScreen> {
     });
     try {
       final reports = await _reportService.getReports(
-        zone: widget.zone,
         timeFilter: _activeTimeFilter,
       );
+      if (kDebugMode) debugPrint('[WALL][initial] count=${reports.length}');
       if (mounted && generation == _loadGeneration) {
         setState(() {
-          _reports = reports;
-          _previousReportCount = reports.length;
+          _reports = _mergeReports(reports);
+          _previousReportCount = _reports.length;
           _isLoading = false;
         });
         _scheduleNextExpiration();
@@ -81,10 +94,21 @@ class _WallScreenState extends State<WallScreen> {
   /// Reproduce sonido cuando llega un nuevo reporte
   void _subscribeToRealtime() {
     _reportService.subscribeToRealtime(
-      zone: widget.zone,
       timeFilter: _activeTimeFilter,
       onData: (reports) {
         if (mounted) {
+          final knownIds = _reports.map((report) => report.id).toSet();
+          final received = reports.where(
+            (report) => !knownIds.contains(report.id),
+          );
+          if (kDebugMode) {
+            for (final report in received) {
+              debugPrint('[WALL][realtime] reportId=${report.id}');
+              if (report.category == 'sos') {
+                debugPrint('[SOS][wall] received reportId=${report.id}');
+              }
+            }
+          }
           setState(() {
             final newCount = reports.length;
             // Sonido de nuevo reporte (solo si ya había cargado antes)
@@ -92,10 +116,13 @@ class _WallScreenState extends State<WallScreen> {
               SoundService().play('zonebot_open');
               HapticFeedback.mediumImpact();
             }
-            _previousReportCount = newCount;
-            _reports = reports;
+            _reports = _mergeReports(reports);
+            _previousReportCount = _reports.length;
             _isLoading = false;
           });
+          if (kDebugMode) {
+            debugPrint('[WALL][merged] count=${_reports.length}');
+          }
           _scheduleNextExpiration();
         }
       },
@@ -118,17 +145,18 @@ class _WallScreenState extends State<WallScreen> {
   }
 
   /// Cambia el filtro temporal y recarga
-  void _setTimeFilter(WallTimeFilter filter) {
+  Future<void> _setTimeFilter(WallTimeFilter filter) async {
     if (_activeTimeFilter == filter) return;
     setState(() => _activeTimeFilter = filter);
+    await _loadReports();
+    if (!mounted) return;
     _reportService.resubscribe(
-      zone: widget.zone,
       timeFilter: filter,
       onData: (reports) {
         if (!mounted) return;
         setState(() {
-          _reports = reports;
-          _previousReportCount = reports.length;
+          _reports = _mergeReports(reports);
+          _previousReportCount = _reports.length;
           _isLoading = false;
           _loadError = null;
         });
@@ -138,7 +166,6 @@ class _WallScreenState extends State<WallScreen> {
         if (mounted && _reports.isEmpty) setState(() => _loadError = error);
       },
     );
-    _loadReports();
   }
 
   void _scheduleNextExpiration() {

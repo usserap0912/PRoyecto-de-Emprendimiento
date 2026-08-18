@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/models/wall_time_filter.dart';
+import 'package:safezone/services/report_service.dart';
 
 Report _report(String id, DateTime createdAt, {String category = 'robo'}) {
   return Report(
@@ -97,5 +98,21 @@ void main() {
       WallTimeFilter.last6Hours.includes(finished.createdAt, now: now),
       false,
     );
+  });
+
+  test('initial Supabase load is not erased by an empty realtime snapshot', () {
+    final persisted = _report(
+      'persisted',
+      now.subtract(const Duration(hours: 1)),
+    );
+
+    final merged = ReportService.mergeWallSnapshots(
+      [persisted],
+      const [],
+      filter: WallTimeFilter.last6Hours,
+      now: now,
+    );
+
+    expect(merged.map((report) => report.id), ['persisted']);
   });
 }

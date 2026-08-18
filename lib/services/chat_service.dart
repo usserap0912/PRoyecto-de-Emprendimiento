@@ -1,72 +1,90 @@
+import 'package:flutter/foundation.dart';
 import 'package:safezone/models/chat_message.dart';
 import 'package:safezone/services/supabase_service.dart';
 
-class ChatService {
-  final SupabaseService _supabase = SupabaseService();
+abstract interface class ChatGateway {
+  Future<List<Map<String, dynamic>>> fetchMessages();
+  Future<Map<String, dynamic>> insertMessage({
+    required String userCode,
+    required String content,
+  });
+  Stream<List<Map<String, dynamic>>> watchMessages();
+}
 
-  /// Obtiene mensajes del chat
+class SupabaseChatGateway implements ChatGateway {
+  SupabaseChatGateway({SupabaseService? supabase})
+    : _supabase = supabase ?? SupabaseService();
+
+  final SupabaseService _supabase;
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMessages() async {
+    final rows = await _supabase.client
+        .from(_supabase.chatMessagesTable)
+        .select('id, user_code, content, created_at')
+        .order('created_at', ascending: true)
+        .limit(100);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  @override
+  Future<Map<String, dynamic>> insertMessage({
+    required String userCode,
+    required String content,
+  }) {
+    return _supabase.client
+        .from(_supabase.chatMessagesTable)
+        .insert({'user_code': userCode, 'content': content})
+        .select('id, user_code, content, created_at')
+        .single();
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> watchMessages() {
+    return _supabase.client
+        .from(_supabase.chatMessagesTable)
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: true);
+  }
+}
+
+class ChatService {
+  ChatService({ChatGateway? gateway})
+    : _gateway = gateway ?? SupabaseChatGateway();
+
+  final ChatGateway _gateway;
+
   Future<List<ChatMessage>> getMessages() async {
     try {
-      final response = await _supabase.client
-          .from(_supabase.chatMessagesTable)
-          .select()
-          .order('created_at', ascending: true)
-          .limit(100);
-
-      return (response as List)
-          .map((item) => ChatMessage.fromMap(item as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      return _getSampleMessages();
+      final response = await _gateway.fetchMessages();
+      return response.map(ChatMessage.fromMap).toList();
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[CHAT][select] error=${error.runtimeType}');
+      }
+      rethrow;
     }
   }
 
-  /// Envía un mensaje al chat
-  Future<void> sendMessage(String userCode, String content) async {
+  Future<ChatMessage> sendMessage(String userCode, String content) async {
     try {
-      await _supabase.client.from(_supabase.chatMessagesTable).insert({
-        'content': content,
-      });
-    } catch (e) {
-      // Fallback offline
+      final row = await _gateway.insertMessage(
+        userCode: userCode,
+        content: content,
+      );
+      if (kDebugMode) debugPrint('[CHAT][insert] code=ok');
+      return ChatMessage.fromMap(row);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[CHAT][insert] code=${error.runtimeType}');
+      }
+      rethrow;
     }
   }
 
-  /// Escucha mensajes en tiempo real
   Stream<List<ChatMessage>> getMessagesStream() {
-    try {
-      return _supabase.client
-          .from(_supabase.chatMessagesTable)
-          .stream(primaryKey: ['id'])
-          .order('created_at', ascending: true)
-          .map((maps) => maps.map((m) => ChatMessage.fromMap(m)).toList());
-    } catch (e) {
-      return const Stream.empty();
-    }
-  }
-
-  List<ChatMessage> _getSampleMessages() {
-    return [
-      ChatMessage(
-        id: 's1',
-        userCode: 'User-A7K3',
-        content:
-            'Buenas noches vecinos, alguien más escuchó ruidos raros en la Av. Revolución?',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
-      ),
-      ChatMessage(
-        id: 's2',
-        userCode: 'User-M9X1',
-        content:
-            'Sí, yo también. Suena como si estuvieran forcejeando una puerta. 🚨',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 3)),
-      ),
-      ChatMessage(
-        id: 's3',
-        userCode: 'User-R4B2',
-        content: 'Ya llamé al serenazgo, están en camino. Manténganse alertas.',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
-      ),
-    ];
+    return _gateway
+        .watchMessages()
+        .map((maps) => maps.map(ChatMessage.fromMap).toList());
   }
 }

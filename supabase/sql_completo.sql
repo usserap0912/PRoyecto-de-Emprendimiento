@@ -657,9 +657,7 @@ CREATE POLICY "user_scores_readable_by_all" ON user_scores
 DROP POLICY IF EXISTS "user_scores_updatable_by_own" ON user_scores;
 CREATE POLICY "user_scores_updatable_by_own" ON user_scores
   FOR UPDATE
-  USING (auth.uid() IS NULL OR user_code IN (
-    SELECT user_code FROM profiles WHERE id = auth.uid()
-  ));
+  USING (true);
 
 CREATE OR REPLACE FUNCTION get_user_best_score(p_user_code TEXT, p_game_type TEXT)
 RETURNS INTEGER AS $$

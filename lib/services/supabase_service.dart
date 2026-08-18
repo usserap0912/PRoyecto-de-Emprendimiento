@@ -154,6 +154,7 @@ class SupabaseService {
         })
         .select('id')
         .single();
+    if (kDebugMode) debugPrint('[SOS][insert] id=${alert['id']}');
 
     try {
       final report = await client
@@ -173,6 +174,9 @@ class SupabaseService {
           })
           .select('id')
           .single();
+      if (kDebugMode) {
+        debugPrint('[SOS][projection] reportId=${report['id']}');
+      }
       return SosPublishResult(
         alertId: alert['id'] as String,
         reportId: report['id'] as String,

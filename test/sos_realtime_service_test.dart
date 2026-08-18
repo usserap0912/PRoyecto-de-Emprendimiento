@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safezone/services/sos_realtime_service.dart';
 
@@ -137,5 +139,21 @@ void main() {
       isNull,
     );
     expect(service.activeAlerts.value, isEmpty);
+  });
+
+  test('receiver event is wired to one sound call with sanitized logs', () {
+    final realtimeSource = File(
+      'lib/services/sos_realtime_service.dart',
+    ).readAsStringSync();
+    final homeSource = File(
+      'lib/screens/home/home_screen.dart',
+    ).readAsStringSync();
+
+    expect(
+      realtimeSource,
+      contains("'[SOS][received] alertId=\${incoming.id}'"),
+    );
+    expect(homeSource, contains('_soundService.playSosReceivedAlert()'));
+    expect(homeSource, contains("'[SOS][sound] played'"));
   });
 }

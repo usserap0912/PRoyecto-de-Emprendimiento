@@ -200,6 +200,21 @@ class ReportService {
     return filter.includes(report.createdAt, now: now);
   }
 
+  static List<Report> mergeWallSnapshots(
+    Iterable<Report> current,
+    Iterable<Report> incoming, {
+    required WallTimeFilter filter,
+    DateTime? now,
+  }) {
+    final byId = <String, Report>{
+      for (final report in current) report.id: report,
+    };
+    for (final report in incoming) {
+      byId[report.id] = report;
+    }
+    return filter.filterAndSort(byId.values, now: now);
+  }
+
   // ============================================================
   // CONSULTAS CON FILTRO TEMPORAL
   // ============================================================
@@ -386,6 +401,7 @@ class ReportService {
         draft.toInsertPayload(imageUrl: imageUrl, videoUrl: videoUrl),
       );
       final report = Report.fromMap(inserted);
+      if (kDebugMode) debugPrint('[REPORT][insert] id=${report.id}');
       _createdReportController.add(report);
       return ReportSubmissionResult.success(report);
     } catch (error, stackTrace) {
@@ -484,6 +500,9 @@ class ReportService {
     required String currentUserCode,
   }) {
     return _wallGateway.watchReactions(reportId).map((rows) {
+      if (kDebugMode) {
+        debugPrint('[REACTION][realtime] reportId=$reportId');
+      }
       final reactions = rows.map(ReportReaction.fromMap);
       return ReactionSummary.fromReactions(
         reactions,
@@ -520,6 +539,7 @@ class ReportService {
       final action = response['action'] == 'removed'
           ? ReactionMutationAction.removed
           : ReactionMutationAction.set;
+      if (kDebugMode) debugPrint('[REACTION][saved] emoji=$emoji');
       return ReactionMutationResult.success(
         action: action,
         emoji: response['reaction_type'] as String?,
@@ -587,6 +607,7 @@ class ReportService {
   /// Obtiene los comentarios de un reporte en tiempo real
   Stream<List<ReportComment>> getCommentsStream(String reportId) {
     return _wallGateway.watchComments(reportId).map((rows) {
+      if (kDebugMode) debugPrint('[COMMENT][realtime] reportId=$reportId');
       final comments = rows.map(ReportComment.fromMap).toList();
       comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return comments;
@@ -612,6 +633,7 @@ class ReportService {
         userCode: userCode,
         content: sanitizedContent,
       );
+      if (kDebugMode) debugPrint('[COMMENT][saved] reportId=$reportId');
       return CommentSubmissionResult.success(ReportComment.fromMap(inserted));
     } catch (error, stackTrace) {
       _logWallError('COMMENT', 'insert', error, stackTrace);

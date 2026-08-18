@@ -669,7 +669,7 @@
         <span>📱</span>
         <span>v1.0.0 Beta</span>
         <span class="dot">•</span>
-        <span>80.5 MB</span>
+        <span>80.9 MB</span>
         <span class="dot">•</span>
         <span>Android 5.0+</span>
       </div>
@@ -692,7 +692,7 @@
         <div class="qr-wrapper">
           <img 
             id="qr-image"
-            src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/"
+            src="docs/safezone-qr.png?v=20260818"
             alt="Código QR para descargar SafeZone"
             loading="lazy"
           />
@@ -749,7 +749,7 @@
 
       try {
         const response = await fetch(
-          'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/'
+          'docs/safezone-qr.png?v=20260818'
         );
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -768,7 +768,7 @@
         }, 2000);
       } catch (e) {
         window.open(
-          'https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=https://usserap0912.github.io/PRoyecto-de-Emprendimiento/',
+          'docs/safezone-qr.png?v=20260818',
           '_blank'
         );
         btn.textContent = originalText;

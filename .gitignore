@@ -50,7 +50,13 @@ app.*.map.json
 *.jks
 *.p12
 *.p8
-key.properties
+*.keystore
+**/key.properties
+**/.build-trust/
+**/local-maven/
+*.pem
+*.key
+*truststore*
 
 # Android Studio will place build artifacts here
 /android/app/debug
