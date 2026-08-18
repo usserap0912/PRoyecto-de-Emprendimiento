@@ -46,25 +46,22 @@ class MapConfig {
       ? '© MapTiler © OpenStreetMap contributors'
       : '© OpenStreetMap contributors';
 
-  /// Límites reales de Collique (el mapa no puede salir de aquí).
-  /// Cubre el corredor urbano de la Av. Revolución (zonas 1-7) y los
-  /// lugares de referencia (Hospital Bernales, comisarías, fortaleza).
+  /// Ventana operativa amplia del mapa.
   ///
-  /// Referencias:
-  ///   Inicio (Paradero Collique): -11.93284, -77.04221
-  ///   Fin (zona alta / Pasamayito): -11.93521, -77.01254
-  ///   Zonas 1-7: lat -11.9304..-11.9352, lng -77.0401..-77.0068
+  /// No representa el límite territorial de Collique ni se renderiza como
+  /// polígono. Se conserva para impedir que pantallas heredadas se desplacen
+  /// accidentalmente a otra parte de Lima.
   static final LatLngBounds colliqueBounds = LatLngBounds(
     const LatLng(-11.945, -77.055),
     const LatLng(-11.905, -76.985),
   );
 
-  /// Centro de Collique: punto medio del corredor de la Av. Revolución
-  /// (entre las zonas 3 y 4), donde está la mayor parte del barrio.
+  /// Fallback heredado para pantallas que todavía requieren un punto inicial.
+  /// El mapa de riesgo usa bounds calculados desde el GeoJSON verificado.
   static const LatLng colliqueCenter = LatLng(-11.9330, -77.0230);
 
-  /// Restricción de cámara: el CENTRO del mapa siempre queda dentro de
-  /// Collique, así el usuario no puede alejarse a otro distrito.
+  /// Restricción operativa: el centro de cámara permanece dentro de la
+  /// ventana amplia definida arriba. No expresa pertenencia territorial.
   ///
   /// Se usa [CameraConstraint.containCenter] en lugar de `contain` porque
   /// `contain` devuelve `null` en pantallas anchas y dispara un `assert`

@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-17",
+  "coordinateReferenceSystem": "EPSG:4326",
+  "notes": [
+    "Solo I–VI conservan puntos cartográficos territoriales de referencia; no son POI, centroides ni límites oficiales.",
+    "VII–X se conservan como evidencia nominal sin geometría verificada y no se renderizan en el mapa.",
+    "Las fuentes institucionales respaldan la existencia y nomenclatura territorial; no aportan polígonos reutilizables por zona.",
+    "No existe en este conjunto un polígono oficial de Collique ni polígonos oficiales de sus zonas."
+  ],
+  "sources": [
+    {
+      "id": "municomas-geografia-2026",
+      "organization": "Municipalidad Distrital de Comas",
+      "title": "Geografía del distrito de Comas",
+      "url": "https://www.municomas.gob.pe/distrito/geografia",
+      "sourceType": "municipal_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "municomas-ord-722-2026",
+      "organization": "Municipalidad Distrital de Comas",
+      "title": "Ordenanza N.º 722/MDC",
+      "url": "https://www.sat.gob.pe/websitev9/Portals/0/Docs/Tramites/Ordenanzas/RatificacionOrdenanzas/2026/ARBITRIOS/COMAS/Ord%20722%20MDC.pdf?ver=2026-01-09-172308-660",
+      "sourceType": "municipal_ordinance",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "cofopri-contingencias-comas-2018",
+      "organization": "COFOPRI",
+      "title": "Distrito de Comas se alista para campaña de levantamiento de contingencias",
+      "url": "https://www.gob.pe/institucion/cofopri/noticias/186569-distrito-de-comas-se-alista-para-campana-de-levantamiento-de-contingencias",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "sbn-collique-iv-2025",
+      "organization": "Superintendencia Nacional de Bienes Estatales",
+      "title": "Resolución SBN N.º 0085-2025/SBN-DGPE",
+      "url": "https://www.sbn.gob.pe/Repositorio/resoluciones_sbn/2025/dgpe/res-sbn-n0-0085-2025sbn-dgpe-2025-07-11.PDF",
+      "sourceType": "government_resolution",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "sbn-collique-v-2017",
+      "organization": "Superintendencia Nacional de Bienes Estatales",
+      "title": "Resolución N.º 0373-2017/SBN-DGPE-SDAPE",
+      "url": "https://www.gob.pe/institucion/sbn/normas-legales/1980996-0373-2017-sbn-dgpe-sdape",
+      "sourceType": "government_resolution",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "diris-collique-iii-2026",
+      "organization": "DIRIS Lima Norte",
+      "title": "Centro de Salud Collique III Zona supera evaluación de calidad",
+      "url": "https://www.gob.pe/institucion/dirislimanorte/noticias/1417035-por-mas-adolescentes-informados-en-comas-centro-de-salud-collique-iii-zona-supera-evaluacion-de-calidad-con-90-de-cumplimiento",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "emape-pasamayito-2026",
+      "organization": "EMAPE",
+      "title": "EMAPE y vecinos de Collique articulan acciones en la vía Pasamayito",
+      "url": "https://www.gob.pe/institucion/emape/noticias/1399339-emape-y-vecinos-de-collique-articulan-acciones-para-fortalecer-la-seguridad-en-la-via-pasamayito",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "indeci-ayabaca-viii-2023",
+      "organization": "INDECI",
+      "title": "Emergencia en el A.H. Ayabaca, octava zona de Collique",
+      "url": "https://www.gob.pe/institucion/indeci/noticias/822743-hallan-cuerpo-del-menor-sepultado-por-derrumbe-en-comas-lima",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "municomas-novena-2023",
+      "organization": "Municipalidad Distrital de Comas",
+      "title": "Referencia municipal a la Novena Zona de Collique",
+      "url": "https://www.municomas.gob.pe/noticia/6403",
+      "sourceType": "municipal_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "mpfn-novena-2021",
+      "organization": "Ministerio Público - Fiscalía de la Nación",
+      "title": "Actividad para niños de la Novena Zona de Collique",
+      "url": "https://www.gob.pe/institucion/mpfn/noticias/570573-realizan-actividad-navidena-para-180-ninos-de-la-novena-zona-de-collique",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "minsa-decima-2014",
+      "organization": "Ministerio de Salud",
+      "title": "Referencia a la décima zona de Collique",
+      "url": "https://www.gob.pe/institucion/minsa/noticias/31965-mas-de-mil-ninos-menores-de-tres-anos-de-comas-se-benefician-con-micronutrientes",
+      "sourceType": "government_web",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "minedu-semillitas-vii",
+      "organization": "Ministerio de Educación",
+      "title": "Relación institucional del PRONOEI Semillitas en Zona VII",
+      "url": "https://minedu.gob.pe/DeInteres/xtras/download.php?link=myperu_beneficiados_inicial.pdf",
+      "sourceType": "government_document",
+      "accessedAt": "2026-08-17"
+    },
+    {
+      "id": "ugel-pronoei-viii-2021",
+      "organization": "UGEL 04",
+      "title": "Resolución Directoral 8101-2021 con referencias a PRONOEI de Zona VIII",
+      "url": "https://app.ugel04.gob.pe/historicos/dmdocuments/documentos-de-gestion/documentos-oficiales/resoluciones-directorales/RD%208101-2021.pdf",
+      "sourceType": "government_resolution",
+      "accessedAt": "2026-08-17"
+    },
+    {
+      "id": "osm-node-12089675544",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona I",
+      "url": "https://www.openstreetmap.org/node/12089675544",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "osm-node-12089675545",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona II",
+      "url": "https://www.openstreetmap.org/node/12089675545",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "osm-node-12089675556",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona III",
+      "url": "https://www.openstreetmap.org/node/12089675556",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "osm-node-12089675557",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona IV",
+      "url": "https://www.openstreetmap.org/node/12089675557",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "osm-node-12089675558",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona V",
+      "url": "https://www.openstreetmap.org/node/12089675558",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    },
+    {
+      "id": "osm-node-4331459846",
+      "organization": "OpenStreetMap contributors",
+      "title": "Punto de referencia cartográfica de Collique - Zona VI",
+      "url": "https://www.openstreetmap.org/node/4331459846",
+      "sourceType": "open_map_node",
+      "accessedAt": "2026-08-16"
+    }
+  ]
+}

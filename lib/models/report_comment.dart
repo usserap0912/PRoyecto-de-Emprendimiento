@@ -19,7 +19,7 @@ class ReportComment {
       id: map['id'] as String,
       reportId: map['report_id'] as String,
       userCode: map['user_code'] as String,
-      content: map['content'] as String,
+      content: (map['comment_text'] ?? map['content']) as String,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
   }
@@ -29,7 +29,7 @@ class ReportComment {
       'id': id,
       'report_id': reportId,
       'user_code': userCode,
-      'content': content,
+      'comment_text': content,
       'created_at': createdAt.toIso8601String(),
     };
   }

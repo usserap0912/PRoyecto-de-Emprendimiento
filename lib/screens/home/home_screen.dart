@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,28 +19,28 @@ import 'package:safezone/services/notification_service.dart';
 import 'package:safezone/services/zonebot_service.dart';
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/widgets/animated_nav_icon.dart';
+import 'package:safezone/models/sos_alert.dart';
+import 'package:safezone/services/sos_realtime_service.dart';
 import 'package:shimmer/shimmer.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userCode;
   final int zone;
 
-  const HomeScreen({
-    super.key,
-    required this.userCode,
-    required this.zone,
-  });
+  const HomeScreen({super.key, required this.userCode, required this.zone});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _currentIndex = 0;
   final SoundService _soundService = SoundService();
   final SupabaseService _supabaseService = SupabaseService();
   final NotificationService _notificationService = NotificationService();
+  final SosRealtimeService _sosRealtimeService = SosRealtimeService();
+  Timer? _incomingSosTimer;
+  SosAlert? _incomingSosAlert;
 
   // ================================================================
   // CREDIT WARNING: Banner animado cuando hay pocos créditos
@@ -127,6 +129,8 @@ class _HomeScreenState extends State<HomeScreen>
     // Inicializar sonido y notificaciones
     _soundService.initialize();
     _notificationService.initialize();
+    _sosRealtimeService.incomingAlert.addListener(_onIncomingSosAlert);
+    _sosRealtimeService.start(currentUserCode: widget.userCode);
 
     _screens = [
       WallScreen(userCode: widget.userCode, zone: widget.zone),
@@ -135,12 +139,12 @@ class _HomeScreenState extends State<HomeScreen>
       CommunityChatScreen(userCode: widget.userCode),
       ReportFormScreen(userCode: widget.userCode, zone: widget.zone),
       PremiumScreen(
-                userCode: widget.userCode,
-                zone: widget.zone,
-                onPremiumChanged: () {
-                  if (mounted) setState(() {});
-                },
-              ),
+        userCode: widget.userCode,
+        zone: widget.zone,
+        onPremiumChanged: () {
+          if (mounted) setState(() {});
+        },
+      ),
     ];
 
     // Animación de bienvenida
@@ -255,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen>
         (r) => r['user_code'] == widget.userCode,
       );
 
-if (myIndex >= 0) {
+      if (myIndex >= 0) {
         final position = myIndex + 1;
         final totalPoints = ranking[myIndex]['total_points'] as int? ?? 0;
         final totalPlayers = ranking.length;
@@ -263,13 +267,16 @@ if (myIndex >= 0) {
         String title, body;
         if (position <= 3) {
           title = '🏆 ¡Top 3 en Collique!';
-          body = 'Quedaste #$position esta semana con $totalPoints pts. ¡Sigue así!';
+          body =
+              'Quedaste #$position esta semana con $totalPoints pts. ¡Sigue así!';
         } else if (position <= 10) {
           title = '🥇 Entre los 10 mejores';
-          body = 'Quedaste #$position de $totalPlayers vecinos esta semana. ¡Sigue participando!';
+          body =
+              'Quedaste #$position de $totalPlayers vecinos esta semana. ¡Sigue participando!';
         } else {
           title = '📊 Tu ranking semanal';
-          body = 'Quedaste #$position de $totalPlayers vecinos esta semana. ¡Participa más para subir!';
+          body =
+              'Quedaste #$position de $totalPlayers vecinos esta semana. ¡Participa más para subir!';
         }
 
         await _notificationService.showAlertNotification(
@@ -297,13 +304,16 @@ if (myIndex >= 0) {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastArchiveDay = prefs.getInt('last_archive_day') ?? 0;
-      final today = DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+      final today =
+          DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
 
       // Solo archivar una vez al día
       if (today != lastArchiveDay) {
         final archived = await ReportService().archiveOldReports();
         if (archived > 0) {
-          debugPrint('HomeScreen: $archived reportes archivados automáticamente');
+          debugPrint(
+            'HomeScreen: $archived reportes archivados automáticamente',
+          );
         }
         await prefs.setInt('last_archive_day', today);
       }
@@ -375,11 +385,39 @@ if (myIndex >= 0) {
 
   @override
   void dispose() {
+    _incomingSosTimer?.cancel();
+    _sosRealtimeService.incomingAlert.removeListener(_onIncomingSosAlert);
+    _sosRealtimeService.stop(clearState: true);
     _welcomeController.dispose();
     _creditWarningController.dispose();
     _tutorialHandController.dispose();
     _supabaseService.unsubscribeFromRoboNotifications();
     super.dispose();
+  }
+
+  void _onIncomingSosAlert() {
+    final alert = _sosRealtimeService.incomingAlert.value;
+    if (alert == null || !mounted) return;
+
+    _incomingSosTimer?.cancel();
+    setState(() => _incomingSosAlert = alert);
+    unawaited(_soundService.playSosReceivedAlert());
+    try {
+      HapticFeedback.heavyImpact();
+    } catch (_) {}
+    _notificationService.showSosAlert(userCode: alert.userCode);
+
+    _incomingSosTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _incomingSosAlert = null);
+    });
+  }
+
+  void _openIncomingSosOnMap() {
+    setState(() {
+      _currentIndex = 1;
+      _incomingSosAlert = null;
+    });
+    _incomingSosTimer?.cancel();
   }
 
   /// Abre ZoneBot con sonido y transición slide-up
@@ -389,16 +427,16 @@ if (myIndex >= 0) {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => ZoneBotScreen(
-          userCode: widget.userCode,
-          zone: widget.zone,
-        ),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            ZoneBotScreen(userCode: widget.userCode, zone: widget.zone),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(0.0, 1.0);
           const end = Offset.zero;
           const curve = Curves.easeOutCubic;
-          final tween = Tween(begin: begin, end: end)
-              .chain(CurveTween(curve: curve));
+          final tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
           return SlideTransition(
             position: animation.drive(tween),
             child: child,
@@ -418,10 +456,7 @@ if (myIndex >= 0) {
           Column(
             children: [
               Expanded(
-                child: IndexedStack(
-                  index: _currentIndex,
-                  children: _screens,
-                ),
+                child: IndexedStack(index: _currentIndex, children: _screens),
               ),
               // Banner de créditos bajos (visible antes del bottom nav)
               _buildCreditWarningBanner(),
@@ -436,8 +471,9 @@ if (myIndex >= 0) {
               builder: (context, child) {
                 return IgnorePointer(
                   child: Container(
-                    color: Colors.black
-                        .withValues(alpha: 0.4 * (1 - _welcomeController.value)),
+                    color: Colors.black.withValues(
+                      alpha: 0.4 * (1 - _welcomeController.value),
+                    ),
                     child: Center(
                       child: Opacity(
                         opacity: 1.0 - _welcomeOpacity.value,
@@ -484,8 +520,7 @@ if (myIndex >= 0) {
             ),
 
           // === TUTORIAL OVERLAY (primera vez que aparece el banner) ===
-          if (_showCreditTutorial)
-            _buildCreditTutorialOverlay(),
+          if (_showCreditTutorial) _buildCreditTutorialOverlay(),
 
           // === GLOBO ZONEBOT (arrastrable) ===
           if (_bubbleReady)
@@ -504,6 +539,59 @@ if (myIndex >= 0) {
               ),
             ),
 
+          if (_incomingSosAlert != null) ...[
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.sosRed, width: 5),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 10,
+              left: 12,
+              right: 12,
+              child: Material(
+                color: AppTheme.sosRed,
+                elevation: 12,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  onTap: _openIncomingSosOnMap,
+                  borderRadius: BorderRadius.circular(14),
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.sos, color: Colors.white, size: 30),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'ALERTA S.O.S. CERCANA',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                'Toca para ver la ubicación aproximada en el mapa.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -515,63 +603,66 @@ if (myIndex >= 0) {
       onTap: _dismissTutorial,
       child: Container(
         color: Colors.black.withValues(alpha: 0.3),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Mano señalando hacia abajo
-              AnimatedBuilder(
-                animation: _tutorialHandController,
-                builder: (context, child) {
-                  return Transform.translate(
-                    offset: Offset.zero,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Texto con shimmer
-                        Shimmer.fromColors(
-                          baseColor: Colors.amber.shade300,
-                          highlightColor: Colors.white,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.touch_app,
-                                    color: Colors.white, size: 22),
-                                SizedBox(width: 8),
-                                Text(
-                                  '¡Toca aquí para ver Premium!',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // Mano señalando hacia abajo
+            AnimatedBuilder(
+              animation: _tutorialHandController,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset.zero,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Texto con shimmer
+                      Shimmer.fromColors(
+                        baseColor: Colors.amber.shade300,
+                        highlightColor: Colors.white,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.touch_app,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                '¡Toca aquí para ver Premium!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Flecha animada apuntando hacia abajo
-                        _AnimatedArrowDown(
-                          controller: _tutorialHandController,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              // Espacio para el banner (se ve debajo)
-              const SizedBox(height: 60),
-            ],
-          ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Flecha animada apuntando hacia abajo
+                      _AnimatedArrowDown(controller: _tutorialHandController),
+                    ],
+                  ),
+                );
+              },
+            ),
+            // Espacio para el banner (se ve debajo)
+            const SizedBox(height: 60),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   /// Banner animado de créditos bajos — aparece cuando quedan ≤5 mensajes o ≤1 reset
@@ -587,8 +678,7 @@ if (myIndex >= 0) {
     return AnimatedBuilder(
       animation: _creditWarningController,
       builder: (context, child) {
-        final slideOffset =
-            (1.0 - _creditWarningController.value) * 60.0;
+        final slideOffset = (1.0 - _creditWarningController.value) * 60.0;
         final opacity = _creditWarningController.value;
 
         return Transform.translate(
@@ -599,18 +689,14 @@ if (myIndex >= 0) {
               onTap: _goToPremiumTab,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isCritical
-                        ? [
-                            Colors.red.shade700,
-                            Colors.orange.shade800,
-                          ]
-                        : [
-                            Colors.amber.shade600,
-                            Colors.orange.shade600,
-                          ],
+                        ? [Colors.red.shade700, Colors.orange.shade800]
+                        : [Colors.amber.shade600, Colors.orange.shade600],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),
@@ -628,9 +714,7 @@ if (myIndex >= 0) {
                   child: Row(
                     children: [
                       // Icono animado
-                      _AnimatedWarningIcon(
-                        isCritical: isCritical,
-                      ),
+                      _AnimatedWarningIcon(isCritical: isCritical),
                       const SizedBox(width: 10),
                       // Texto
                       Expanded(
@@ -653,8 +737,7 @@ if (myIndex >= 0) {
                               '$msgTokens mensajes • $resetTokens resets — '
                               'Toca para ver Premium ♾️',
                               style: TextStyle(
-                                color:
-                                    Colors.white.withValues(alpha: 0.8),
+                                color: Colors.white.withValues(alpha: 0.8),
                                 fontSize: 11,
                               ),
                             ),
@@ -854,9 +937,7 @@ class _AnimatedArrowDown extends StatelessWidget {
       builder: (context, child) {
         return CustomPaint(
           size: const Size(40, 50),
-          painter: _ArrowDownPainter(
-            progress: controller.value,
-          ),
+          painter: _ArrowDownPainter(progress: controller.value),
         );
       },
     );
@@ -878,11 +959,7 @@ class _ArrowDownPainter extends CustomPainter {
       ..color = Colors.amber.withValues(alpha: 0.3 + progress * 0.4)
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(
-      Offset(centerX, centerY),
-      16 + progress * 4,
-      circlePaint,
-    );
+    canvas.drawCircle(Offset(centerX, centerY), 16 + progress * 4, circlePaint);
 
     // Flecha hacia abajo
     final arrowPaint = Paint()

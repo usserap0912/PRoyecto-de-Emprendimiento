@@ -22,9 +22,16 @@ class NotificationService {
   /// Inicializa el plugin de notificaciones.
   Future<void> initialize() async {
     if (_initialized) return;
+    if (kIsWeb) {
+      // The app-wide in-app SOS banner is the Web fallback. Do not call a
+      // native-only plugin implementation from Edge/Chrome.
+      return;
+    }
 
     try {
-      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
       const iosSettings = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
@@ -50,7 +57,8 @@ class NotificationService {
 
       await _plugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(androidChannel);
 
       _initialized = true;
@@ -67,7 +75,7 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
-    if (!_initialized) return;
+    if (kIsWeb || !_initialized) return;
 
     try {
       final vibrationPattern = Int64List(4)
@@ -131,10 +139,12 @@ class NotificationService {
   /// Muestra una notificación de alerta S.O.S. activa.
   Future<void> showSosAlert({
     required String userCode,
-    required String address,
+    String? areaLabel,
   }) async {
     final title = '🚨 ¡Alerta S.O.S. activa!';
-    final body = 'Un vecino necesita ayuda en $address';
+    final body = areaLabel == null
+        ? 'Un vecino necesita ayuda. Abre SafeZone para ver la ubicación aproximada.'
+        : 'Un vecino necesita ayuda en $areaLabel.';
 
     await showAlertNotification(
       id: DateTime.now().millisecondsSinceEpoch % 100000,

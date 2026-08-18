@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:safezone/services/zonebot_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
 // PAYMENT SERVICE
@@ -37,10 +38,21 @@ class PaymentService {
 
   /// Modo demo (sin pago real). Solo se activa compilando con
   /// --dart-define=DEMO_PREMIUM=true
-  static const bool _demoMode =
-      bool.fromEnvironment('DEMO_PREMIUM', defaultValue: false);
+  static const bool _demoMode = bool.fromEnvironment(
+    'DEMO_PREMIUM',
+    defaultValue: false,
+  );
 
   static bool get isDemoMode => _demoMode;
+
+  Map<String, String>? _authorizedHeaders() {
+    final token = Supabase.instance.client.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) return null;
+    return {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+  }
 
   /// Inicia el flujo de compra premium (suscripción mensual).
   Future<PaymentResult> purchasePremium({
@@ -56,13 +68,12 @@ class PaymentService {
 
     // Modo real: Mercado Pago Checkout Pro
     try {
+      final headers = _authorizedHeaders();
+      if (headers == null) return PaymentResult.failed;
       final response = await http.post(
         Uri.parse('$_functionBaseUrl/checkout'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'userCode': userCode,
-          'zone': zone,
-        }),
+        headers: headers,
+        body: jsonEncode(<String, dynamic>{}),
       );
 
       if (response.statusCode != 200) {
@@ -79,7 +90,6 @@ class PaymentService {
       }
 
       // Abrir Mercado Pago Checkout en el navegador
-      debugPrint('PaymentService: Abriendo checkout: $checkoutUrl');
       final uri = Uri.parse(checkoutUrl);
       try {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -101,8 +111,11 @@ class PaymentService {
     }
 
     try {
+      final headers = _authorizedHeaders();
+      if (headers == null) return false;
       final response = await http.get(
-        Uri.parse('$_functionBaseUrl/status?user_code=$userCode'),
+        Uri.parse('$_functionBaseUrl/status'),
+        headers: headers,
       );
 
       if (response.statusCode == 200) {
@@ -122,10 +135,12 @@ class PaymentService {
     if (_demoMode) return false;
 
     try {
+      final headers = _authorizedHeaders();
+      if (headers == null) return false;
       final response = await http.post(
         Uri.parse('$_functionBaseUrl/cancel'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'userCode': userCode}),
+        headers: headers,
+        body: jsonEncode(<String, dynamic>{}),
       );
       return response.statusCode == 200;
     } catch (e) {

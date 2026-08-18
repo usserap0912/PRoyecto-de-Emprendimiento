@@ -84,14 +84,16 @@ class Report {
   // TAG helpers
   // ================================================================
 
-  String get tagLabel {
+  String get tagLabel => tagLabelFor(tag);
+
+  static String tagLabelFor(String tag) {
     switch (tag) {
       case 'rojo':
         return 'Peligro Grave';
       case 'amarillo':
         return 'Alerta Preventiva';
       case 'verde':
-        return 'Buena Noticia';
+        return 'Información / situación positiva';
       default:
         return tag;
     }
@@ -127,11 +129,11 @@ class Report {
       case 'sos':
         return '🚨 S.O.S.';
       case 'sospechoso':
-        return 'Sospechoso';
+        return 'Actividad sospechosa';
       case 'extorsion':
-        return 'Extorsión';
+        return 'Extorsión / Amenaza';
       case 'alumbrado':
-        return 'Alumbrado';
+        return 'Falla de alumbrado';
       default:
         return 'Otros';
     }
@@ -140,17 +142,17 @@ class Report {
   static IconData categoryIconFor(String category) {
     switch (category) {
       case 'robo':
-        return Icons.visibility_off;
+        return Icons.gpp_bad_outlined;
       case 'sos':
         return Icons.sos;
       case 'sospechoso':
-        return Icons.person_search;
+        return Icons.visibility_outlined;
       case 'extorsion':
-        return Icons.block;
+        return Icons.warning_amber_rounded;
       case 'alumbrado':
         return Icons.lightbulb_outline;
       default:
-        return Icons.info_outline;
+        return Icons.more_horiz_rounded;
     }
   }
 

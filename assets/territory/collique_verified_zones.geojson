@@ -1,0 +1,90 @@
+{
+  "type": "FeatureCollection",
+  "name": "collique_verified_zones",
+  "metadata": {
+    "description": "Puntos cartográficos territoriales verificados I–VI. Son referencias, no POI, centroides ni límites oficiales.",
+    "coordinateOrder": "longitude_latitude",
+    "crs": "EPSG:4326",
+    "verifiedAt": "2026-08-17"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "collique-zone-i",
+      "properties": {
+        "id": "collique-zone-i", "zoneNumber": 1, "displayLabel": "ZONA I", "name": "Collique - Zona I",
+        "nameVariants": ["I Zona de Collique", "Primera Zona de Collique", "1ra Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-12089675544", "municomas-geografia-2026", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.0349165, -11.9152621]}
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-ii",
+      "properties": {
+        "id": "collique-zone-ii", "zoneNumber": 2, "displayLabel": "ZONA II", "name": "Collique - Zona II",
+        "nameVariants": ["II Zona de Collique", "Segunda Zona de Collique", "2da Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-12089675545", "municomas-geografia-2026", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.0308166, -11.915714]}
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-iii",
+      "properties": {
+        "id": "collique-zone-iii", "zoneNumber": 3, "displayLabel": "ZONA III", "name": "Collique - Zona III",
+        "nameVariants": ["III Zona de Collique", "Tercera Zona de Collique", "3ra Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-12089675556", "diris-collique-iii-2026", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.025484, -11.9142413]}
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-iv",
+      "properties": {
+        "id": "collique-zone-iv", "zoneNumber": 4, "displayLabel": "ZONA IV", "name": "Collique - Zona IV",
+        "nameVariants": ["IV Zona de Collique", "Cuarta Zona de Collique", "4ta Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-12089675557", "sbn-collique-iv-2025", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.0179046, -11.9119415]}
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-v",
+      "properties": {
+        "id": "collique-zone-v", "zoneNumber": 5, "displayLabel": "ZONA V", "name": "Collique - Zona V",
+        "nameVariants": ["V Zona de Collique", "Quinta Zona de Collique", "5ta Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-12089675558", "sbn-collique-v-2017", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.0087838, -11.9122926]}
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-vi",
+      "properties": {
+        "id": "collique-zone-vi", "zoneNumber": 6, "displayLabel": "ZONA VI", "name": "Collique - Zona VI",
+        "nameVariants": ["VI Zona de Collique", "Sexta Zona de Collique", "6ta Zona de Collique"],
+        "divisionType": "zona_de_collique", "geometryRole": "reference_point", "boundaryStatus": "not_available",
+        "verificationStatus": "verified", "confidence": "medium",
+        "sourceRefs": ["osm-node-4331459846", "municomas-geografia-2026", "municomas-ord-722-2026"],
+        "productionVisible": true, "selectionVisible": true, "verifiedAt": "2026-08-17"
+      },
+      "geometry": {"type": "Point", "coordinates": [-77.0037646, -11.9128541]}
+    }
+  ]
+}

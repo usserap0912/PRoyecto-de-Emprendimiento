@@ -25,7 +25,6 @@ class ChatService {
   Future<void> sendMessage(String userCode, String content) async {
     try {
       await _supabase.client.from(_supabase.chatMessagesTable).insert({
-        'user_code': userCode,
         'content': content,
       });
     } catch (e) {
@@ -40,8 +39,7 @@ class ChatService {
           .from(_supabase.chatMessagesTable)
           .stream(primaryKey: ['id'])
           .order('created_at', ascending: true)
-          .map((maps) =>
-              maps.map((m) => ChatMessage.fromMap(m)).toList());
+          .map((maps) => maps.map((m) => ChatMessage.fromMap(m)).toList());
     } catch (e) {
       return const Stream.empty();
     }
@@ -52,13 +50,15 @@ class ChatService {
       ChatMessage(
         id: 's1',
         userCode: 'User-A7K3',
-        content: 'Buenas noches vecinos, alguien más escuchó ruidos raros en la Av. Revolución?',
+        content:
+            'Buenas noches vecinos, alguien más escuchó ruidos raros en la Av. Revolución?',
         createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
       ),
       ChatMessage(
         id: 's2',
         userCode: 'User-M9X1',
-        content: 'Sí, yo también. Suena como si estuvieran forcejeando una puerta. 🚨',
+        content:
+            'Sí, yo también. Suena como si estuvieran forcejeando una puerta. 🚨',
         createdAt: DateTime.now().subtract(const Duration(minutes: 3)),
       ),
       ChatMessage(

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/services/report_service.dart';
-import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/widgets/reaction_buttons.dart';
 import 'package:safezone/widgets/tag_badge.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -45,23 +44,18 @@ class _PostCardState extends State<PostCard>
 
   Future<void> _loadUserReactions() async {
     final reactions = await _reportService.getUserReactions(
-        widget.report.id, widget.userCode);
+      widget.report.id,
+      widget.userCode,
+    );
     if (mounted) setState(() => _userReactions = reactions);
   }
 
   Future<void> _handleReaction(String reactionType) async {
-    final wasActive = _userReactions.contains(reactionType);
     await _reportService.toggleReaction(
-        widget.report.id, widget.userCode, reactionType);
-    // Otorgar puntos solo si es una reacción NUEVA (no al quitarla)
-    if (!wasActive) {
-      SupabaseService().addVecinoPoints(
-        userCode: widget.userCode,
-        points: 5,
-        reason: 'reaction',
-        description: 'Reaccionó a un reporte',
-      );
-    }
+      widget.report.id,
+      widget.userCode,
+      reactionType,
+    );
     await _loadUserReactions();
     widget.onReactionChanged();
   }
@@ -81,8 +75,8 @@ class _PostCardState extends State<PostCard>
     // Fondo tintado para SOS
     final sosBgColor = _isSos
         ? (isDark
-            ? AppTheme.sosRed.withValues(alpha: 0.15)
-            : const Color(0xFFFFEBEE))
+              ? AppTheme.sosRed.withValues(alpha: 0.15)
+              : const Color(0xFFFFEBEE))
         : null;
 
     return Card(
@@ -98,8 +92,7 @@ class _PostCardState extends State<PostCard>
   }
 
   /// Contenido normal (no SOS)
-  Widget _buildNormalContent(
-      bool isDark, Color textColor, Color mutedColor) {
+  Widget _buildNormalContent(bool isDark, Color textColor, Color mutedColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -185,11 +178,7 @@ class _PostCardState extends State<PostCard>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.sos,
-                size: 16 + pulse * 2,
-                color: AppTheme.sosRed,
-              ),
+              Icon(Icons.sos, size: 16 + pulse * 2, color: AppTheme.sosRed),
               const SizedBox(width: 8),
               Text(
                 '🚨 ALERTA S.O.S. ACTIVA',
@@ -218,8 +207,7 @@ class _PostCardState extends State<PostCard>
   }
 
   /// Header con avatar, nombre, tiempo y tag
-  Widget _buildHeader(
-      bool isDark, Color textColor, Color mutedColor) {
+  Widget _buildHeader(bool isDark, Color textColor, Color mutedColor) {
     return Padding(
       padding: EdgeInsets.fromLTRB(16, _isSos ? 10 : 14, 16, 0),
       child: Row(
@@ -254,10 +242,7 @@ class _PostCardState extends State<PostCard>
                 const SizedBox(height: 2),
                 Text(
                   '${timeago.format(widget.report.createdAt, locale: 'es')} · Zona ${widget.report.zone}',
-                  style: TextStyle(
-                    color: mutedColor,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: mutedColor, fontSize: 12),
                 ),
               ],
             ),
@@ -278,8 +263,7 @@ class _PostCardState extends State<PostCard>
           if (widget.report.status == 'resuelto')
             Container(
               margin: const EdgeInsets.only(left: 8),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: AppTheme.safeGreen.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
@@ -291,8 +275,7 @@ class _PostCardState extends State<PostCard>
                   SizedBox(width: 4),
                   Text(
                     'Resuelto',
-                    style:
-                        TextStyle(fontSize: 11, color: AppTheme.safeGreen),
+                    style: TextStyle(fontSize: 11, color: AppTheme.safeGreen),
                   ),
                 ],
               ),
@@ -348,7 +331,7 @@ class _PostCardState extends State<PostCard>
                       child: CircularProgressIndicator(
                         value: loadingProgress.expectedTotalBytes != null
                             ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
+                                  loadingProgress.expectedTotalBytes!
                             : null,
                         color: AppTheme.primaryGreen,
                       ),
@@ -363,12 +346,16 @@ class _PostCardState extends State<PostCard>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.broken_image_outlined,
-                              size: 40, color: mutedColor),
+                          Icon(
+                            Icons.broken_image_outlined,
+                            size: 40,
+                            color: mutedColor,
+                          ),
                           const SizedBox(height: 8),
-                          Text('No se pudo cargar la imagen',
-                              style: TextStyle(
-                                  color: mutedColor, fontSize: 13)),
+                          Text(
+                            'No se pudo cargar la imagen',
+                            style: TextStyle(color: mutedColor, fontSize: 13),
+                          ),
                         ],
                       ),
                     ),
@@ -437,19 +424,24 @@ class _PostCardState extends State<PostCard>
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
                   return const Center(
-                      child:
-                          CircularProgressIndicator(color: Colors.white));
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
                 },
                 errorBuilder: (context, error, stackTrace) {
                   return const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.broken_image,
-                            color: Colors.white54, size: 64),
+                        Icon(
+                          Icons.broken_image,
+                          color: Colors.white54,
+                          size: 64,
+                        ),
                         SizedBox(height: 16),
-                        Text('Error al cargar imagen',
-                            style: TextStyle(color: Colors.white54)),
+                        Text(
+                          'Error al cargar imagen',
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ],
                     ),
                   );
@@ -489,7 +481,10 @@ class _CategoryChip extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-                fontSize: 11, color: color, fontWeight: FontWeight.w500),
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

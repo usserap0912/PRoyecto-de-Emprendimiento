@@ -1,411 +1,360 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:safezone/config/map_config.dart';
-import 'package:safezone/theme/app_theme.dart';
+import 'package:safezone/models/sos_session.dart';
 import 'package:safezone/services/location_service.dart';
-import 'package:safezone/services/supabase_service.dart';
+import 'package:safezone/services/permission_service.dart';
+import 'package:safezone/services/sos_service.dart';
 import 'package:safezone/services/sound_service.dart';
-import 'package:safezone/services/notification_service.dart';
-import 'package:safezone/services/sos_state_service.dart';
-import 'package:uuid/uuid.dart';
+import 'package:safezone/theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SosScreen extends StatefulWidget {
   final String userCode;
   final int zone;
+  final SosService? service;
 
   const SosScreen({
     super.key,
     required this.userCode,
     required this.zone,
+    this.service,
   });
 
   @override
   State<SosScreen> createState() => _SosScreenState();
 }
 
-class _SosScreenState extends State<SosScreen>
-    with SingleTickerProviderStateMixin {
-  bool _isActivated = false;
+class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
+  late final SosService _sosService;
+  final SoundService _soundService = SoundService();
+  final LocationService _locationService = LocationService();
+  final PermissionService _permissionService = PermissionService();
+  final MapController _mapController = MapController();
+
+  late final AnimationController _buttonPulseController;
+  late final Animation<double> _buttonPulseScale;
+  late final AnimationController _mapPulseController;
+
+  Timer? _activationTimer;
+  StreamSubscription<Position>? _positionSubscription;
+  bool _isPreparing = false;
   bool _isCountingDown = false;
-  int _countdown = 3;
-  Timer? _countdownTimer;
-  bool _alertSent = false;
-  bool _saveError = false;
-
-  // Animaciones
-  late AnimationController _pulseAnim;
-  late Animation<double> _pulseScale;
-  late AnimationController _mapBlinkController;
-  late Animation<double> _mapBlinkOpacity;
-
-  // Ubicación
+  int _activationCountdown = 3;
   double? _userLat;
   double? _userLng;
-  String? _userAddress;
-  bool _isLocating = false;
-
-  // Comisaría más cercana
   Map<String, dynamic>? _nearestStation;
-  String _distanceText = '';
-
-  // Control de mapa
-  final MapController _mapController = MapController();
+  String? _distanceText;
 
   @override
   void initState() {
     super.initState();
-
-    // Pulso del botón SOS
-    _pulseAnim = AnimationController(
+    _sosService = widget.service ?? SosService();
+    _buttonPulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
-    _pulseScale = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(parent: _pulseAnim, curve: Curves.easeInOut),
+    _buttonPulseScale = Tween<double>(begin: 1, end: 1.04).animate(
+      CurvedAnimation(parent: _buttonPulseController, curve: Curves.easeInOut),
     );
-
-    // Parpadeo del marcador en el mapa
-    _mapBlinkController = AnimationController(
+    _mapPulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
-    _mapBlinkOpacity = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _mapBlinkController, curve: Curves.easeInOut),
+      duration: const Duration(milliseconds: 900),
     );
-
-    // Obtener ubicación y comisaría más cercana al iniciar
-    _loadLocationAndNearestStation();
+    _sosService.state.addListener(_onSosStateChanged);
+    _onSosStateChanged();
   }
 
-  Future<void> _loadLocationAndNearestStation() async {
-    setState(() => _isLocating = true);
-    try {
-      final locationService = LocationService();
-      final position = await locationService.getCurrentLocation();
-      if (position != null && mounted) {
-        setState(() {
-          _userLat = position.latitude;
-          _userLng = position.longitude;
-        });
-        // Obtener dirección
-        final address =
-            await locationService.getAddressFromCoordinates(_userLat!, _userLng!);
-        if (mounted) {
-          setState(() => _userAddress = address);
-        }
-        // Encontrar comisaría más cercana
-        _updateNearestStation(_userLat!, _userLng!);
+  @override
+  void dispose() {
+    _activationTimer?.cancel();
+    _positionSubscription?.cancel();
+    _sosService.state.removeListener(_onSosStateChanged);
+    unawaited(_soundService.stopSosActivationAlarm());
+    _buttonPulseController.dispose();
+    _mapPulseController.dispose();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  void _onSosStateChanged() {
+    final session = _sosService.state.value;
+    if (session.isActive) {
+      unawaited(_soundService.startSosActivationAlarm());
+      _buttonPulseController.stop();
+      if (!_mapPulseController.isAnimating) {
+        _mapPulseController.repeat(reverse: true);
       }
-    } catch (e) {
-      debugPrint('SosScreen: Error cargando ubicación: $e');
-    } finally {
-      if (mounted) setState(() => _isLocating = false);
+    } else if (session.phase == SosSessionPhase.idle) {
+      unawaited(_soundService.stopSosActivationAlarm());
+      _mapPulseController.stop();
+      _mapPulseController.value = 0;
+      if (!_buttonPulseController.isAnimating) {
+        _buttonPulseController.repeat(reverse: true);
+      }
+    } else {
+      unawaited(_soundService.stopSosActivationAlarm());
+      _buttonPulseController.stop();
+      _mapPulseController.stop();
+    }
+    if (!session.isActive) {
+      _positionSubscription?.cancel();
+      _positionSubscription = null;
+      _userLat = null;
+      _userLng = null;
+      _nearestStation = null;
+      _distanceText = null;
     }
   }
 
-  void _updateNearestStation(double lat, double lng) {
-    final station = LocationService.findNearestStation(lat, lng);
+  Future<void> _beginActivation() async {
+    if (_isPreparing || _isCountingDown || _sosService.isActive) return;
+    _safeHaptic(HapticFeedback.heavyImpact);
+    setState(() => _isPreparing = true);
+
+    final hasLocation = await _prepareLocationPermission();
+    if (hasLocation) await _loadCurrentLocation();
+    if (!mounted) return;
+
+    setState(() {
+      _isPreparing = false;
+      _isCountingDown = true;
+      _activationCountdown = 3;
+    });
+    _activationTimer?.cancel();
+    _activationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      _safeHaptic(HapticFeedback.mediumImpact);
+      setState(() => _activationCountdown--);
+      if (_activationCountdown <= 0) {
+        timer.cancel();
+        unawaited(_activateSos());
+      }
+    });
+  }
+
+  Future<bool> _prepareLocationPermission() async {
+    if (await _permissionService.hasLocationPermission()) return true;
+    if (!mounted) return false;
+
+    final shouldRequest =
+        await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('Ubicación durante el S.O.S.'),
+            content: const Text(
+              'SafeZone usará tu GPS únicamente mientras la alerta esté activa. '
+              'Compartirá una ubicación aproximada con usuarios conectados y la '
+              'retirará al finalizar. Si no autorizas, el S.O.S. funcionará solo '
+              'en este dispositivo y podrás llamar a emergencias.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Continuar sin GPS'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Permitir ubicación'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!shouldRequest) return false;
+
+    final result = await _permissionService.requestLocationPermission();
+    if (result == AppPermissionResult.granted) return true;
+    if (!mounted) return false;
+
+    final message = switch (result) {
+      AppPermissionResult.permanentlyDenied =>
+        'Ubicación bloqueada. Puedes habilitarla en Configuración; el S.O.S. seguirá local.',
+      AppPermissionResult.unavailable =>
+        'El GPS no está disponible. El S.O.S. seguirá local.',
+      _ => 'Permiso denegado. El S.O.S. seguirá local.',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+    return false;
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    try {
+      final position = await _locationService.getCurrentLocation();
+      if (position == null || !mounted) return;
+      _setLocalPosition(position.latitude, position.longitude);
+    } catch (error) {
+      debugPrint('SosScreen location error: $error');
+    }
+  }
+
+  void _setLocalPosition(double latitude, double longitude) {
+    if (!mounted) return;
+    final station = LocationService.findNearestStation(latitude, longitude);
     final distance = station['distance_meters'] as double;
     setState(() {
+      _userLat = latitude;
+      _userLng = longitude;
       _nearestStation = station;
       _distanceText = LocationService.formatDistance(distance);
     });
   }
 
-  @override
-  void dispose() {
-    _countdownTimer?.cancel();
-    _pulseAnim.dispose();
-    _mapBlinkController.dispose();
-    _mapController.dispose();
-    // Asegurar que la alarma se detenga
-    SoundService().stop(stopLooping: true);
-    super.dispose();
-  }
-
-  void _startSos() {
-    HapticFeedback.heavyImpact();
-    setState(() {
-      _isCountingDown = true;
-      _countdown = 3;
-      _alertSent = false;
-      _saveError = false;
-    });
-
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      HapticFeedback.heavyImpact();
-      if (mounted) {
-        setState(() {
-          _countdown--;
-        });
-      }
-
-      if (_countdown == 0) {
-        timer.cancel();
-        _sendSosAlert();
-      }
-    });
-  }
-
-  void _cancelSos() {
-    _countdownTimer?.cancel();
-    HapticFeedback.mediumImpact();
-    SoundService().stop(stopLooping: true);
-    // Notificar que el S.O.S. ya no está activo
-    SosStateService().setActive(false);
-    if (mounted) {
-      setState(() {
-        _isCountingDown = false;
-        _isActivated = false;
-        _alertSent = false;
-        _countdown = 3;
-      });
-    }
-  }
-
-  Future<void> _sendSosAlert() async {
+  Future<void> _activateSos() async {
     if (!mounted) return;
+    setState(() => _isCountingDown = false);
+    _safeHaptic(HapticFeedback.heavyImpact);
 
-    // Iniciar alarma SOS en loop
-    SoundService().playLoopingSosAlarm();
-    HapticFeedback.heavyImpact();
+    final coordinates = _userLat != null && _userLng != null
+        ? SosCoordinates(latitude: _userLat!, longitude: _userLng!)
+        : null;
+    unawaited(
+      _sosService.activate(
+        userCode: widget.userCode,
+        zone: widget.zone,
+        coordinates: coordinates,
+      ),
+    );
+    if (coordinates != null) _startPositionSharing();
+  }
 
+  void _startPositionSharing() {
+    _positionSubscription?.cancel();
+    final stream = _locationService.getPositionStream();
+    if (stream == null) return;
+    _positionSubscription = stream.listen(
+      (position) {
+        if (!_sosService.isActive) return;
+        _setLocalPosition(position.latitude, position.longitude);
+        unawaited(
+          _sosService.updateLocation(
+            SosCoordinates(
+              latitude: position.latitude,
+              longitude: position.longitude,
+            ),
+          ),
+        );
+      },
+      onError: (Object error) {
+        debugPrint('SosScreen position stream error: $error');
+      },
+    );
+  }
+
+  void _cancelActivationCountdown() {
+    _activationTimer?.cancel();
+    _safeHaptic(HapticFeedback.lightImpact);
     setState(() {
       _isCountingDown = false;
-      _isActivated = true;
+      _activationCountdown = 3;
+      _isPreparing = false;
     });
-
-    // Notificar a otras pantallas (ej: el Mapa) que el S.O.S. está activo
-    SosStateService().setActive(true);
-
-    // Obtener ubicación (actualizar si no tenemos)
-    final locationService = LocationService();
-    if (_userLat == null) {
-      final position = await locationService.getCurrentLocation();
-      if (position != null && mounted) {
-        setState(() {
-          _userLat = position.latitude;
-          _userLng = position.longitude;
-        });
-        final address =
-            await locationService.getAddressFromCoordinates(_userLat!, _userLng!);
-        if (mounted) setState(() => _userAddress = address);
-        _updateNearestStation(_userLat!, _userLng!);
-      }
-    }
-
-    final lat = _userLat ?? LocationService.colliqueLat;
-    final lng = _userLng ?? LocationService.colliqueLng;
-
-    // Guardar en Supabase
-    final supabase = SupabaseService();
-    final saved = await supabase.insertSosAlert({
-      'user_code': widget.userCode,
-      'latitude': lat,
-      'longitude': lng,
-      'address': _userAddress,
-      'status': 'activo',
-    });
-
-    // ============================================================
-    // 1️⃣ PUBLICAR EN EL MURO (tabla reports)
-    // ============================================================
-    try {
-      await supabase.client.from('reports').insert({
-        'user_code': widget.userCode,
-        'zone': widget.zone,
-        'category': 'sos',
-        'risk_level': 'critica',
-        'description': _userAddress != null
-            ? '🚨 ALERTA S.O.S. - Un vecino necesita ayuda urgente en $_userAddress'
-            : '🚨 ALERTA S.O.S. - Un vecino necesita ayuda urgente en Collique',
-        'latitude': lat,
-        'longitude': lng,
-        'address': _userAddress,
-        'tag': 'rojo',
-        'status': 'activo',
-        'created_at': DateTime.now().toIso8601String(),
-      });
-      
-      // Feedback intenso: vibración al publicar en el Muro
-      HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 150));
-      HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 100));
-      HapticFeedback.selectionClick();
-    } catch (e) {
-      debugPrint('SosScreen: Error publicando en Muro: $e');
-    }
-
-    // ============================================================
-    // 2️⃣ BROADCAST EN CHAT COMUNITARIO
-    // ============================================================
-    try {
-      await supabase.client.from('chat_messages').insert({
-        'id': const Uuid().v4(),
-        'user_code': '🚨 SISTEMA',
-        'content': _userAddress != null
-            ? '🚨 ¡ALERTA S.O.S. ACTIVA! Un vecino de Zona ${widget.zone} necesita ayuda urgente en $_userAddress. ¡Si estás cerca, por favor ayuda! 🙏'
-            : '🚨 ¡ALERTA S.O.S. ACTIVA! Un vecino de Zona ${widget.zone} necesita ayuda urgente. ¡Si estás cerca, por favor ayuda! 🙏',
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('SosScreen: Error en broadcast chat: $e');
-    }
-
-    // ============================================================
-    // 3️⃣ OTORGAR PUNTOS VECINALES (+20 por activar SOS)
-    // ============================================================
-    supabase.addVecinoPoints(
-      userCode: widget.userCode,
-      points: 20,
-      reason: 'sos',
-      description: 'Activó una alerta SOS en Zona ${widget.zone}',
-    );
-
-    // ============================================================
-    // 4️⃣ SONIDO DE CONFIRMACIÓN (siempre, aunque falle el muro)
-    // ============================================================
-    SoundService().play('sos_sent');
-
-    // ============================================================
-    // 5️⃣ NOTIFICACIÓN LOCAL
-    // ============================================================
-    NotificationService().showSosAlert(
-      userCode: widget.userCode,
-      address: _userAddress ?? 'Zona ${widget.zone}',
-    );
-
-    // Animar el mapa a la ubicación
-    try {
-      _mapController.move(LatLng(lat, lng), 16.0);
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _alertSent = true;
-        _saveError = !saved;
-      });
-    }
   }
 
-  void _deactivateAlert() {
-    SoundService().stop(stopLooping: true);
-    HapticFeedback.mediumImpact();
-    // Notificar que el S.O.S. ya no está activo
-    SosStateService().setActive(false);
-    if (mounted) {
-      setState(() {
-        _isActivated = false;
-        _alertSent = false;
-        _saveError = false;
-      });
+  Future<void> _retrySosTransmission() async {
+    if (_userLat == null || _userLng == null) {
+      if (!await _prepareLocationPermission()) return;
+      await _loadCurrentLocation();
+      if (_userLat == null || _userLng == null) return;
+      _startPositionSharing();
+      await _sosService.updateLocation(
+        SosCoordinates(latitude: _userLat!, longitude: _userLng!),
+      );
+      return;
     }
+    await _sosService.retry();
   }
 
-  Future<void> _callEmergeny(String phone) async {
-    final uri = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No se puede llamar al $phone'),
-            behavior: SnackBarBehavior.floating,
+  Future<void> _confirmAndCancel() async {
+    if (!_sosService.state.value.canCancel || !mounted) return;
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('¿Finalizar S.O.S.?'),
+            content: const Text(
+              'La ubicación dejará de compartirse y los demás usuarios verán la alerta como finalizada.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Mantener activo'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Finalizar'),
+              ),
+            ],
           ),
-        );
-      }
-    }
+        ) ??
+        false;
+    if (confirmed) await _sosService.cancel();
   }
 
-  /// Abre WhatsApp con un mensaje de SOS precargado incluyendo ubicación.
-  Future<void> _sendWhatsAppLocation() async {
-    final lat = _userLat ?? LocationService.colliqueLat;
-    final lng = _userLng ?? LocationService.colliqueLng;
-    final mapsUrl = 'https://maps.google.com/maps?q=$lat,$lng';
+  Future<void> _callEmergency(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        return;
+      }
+    } catch (error) {
+      debugPrint('SosScreen phone launch error: $error');
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Este dispositivo no puede iniciar llamadas. Marca $phone.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
+  Future<void> _shareLocation() async {
+    if (!_sosService.isActive || _userLat == null || _userLng == null) return;
+    final mapsUrl = 'https://maps.google.com/maps?q=$_userLat,$_userLng';
     final message = Uri.encodeComponent(
-      '🚨 ¡ESTO ES UNA EMERGENCIA!\n'
-      'Necesito ayuda urgente. Mi ubicación actual es:\n'
-      '📍 ${_userAddress ?? "Collique, Comas"}\n'
-      '🔗 $mapsUrl\n'
-      '👤 Zona ${widget.zone}\n\n'
-      '¡Por favor, ayuda! 🙏',
+      '🚨 Necesito ayuda urgente. Mi ubicación actual: $mapsUrl',
     );
-
-    // Intentar abrir WhatsApp primero con el esquema nativo
-    final whatsappUri = Uri.parse('whatsapp://send?text=$message');
-    final webWhatsappUri = Uri.parse('https://wa.me/?text=$message');
-
-    if (await canLaunchUrl(whatsappUri)) {
-      await launchUrl(whatsappUri);
-    } else if (await canLaunchUrl(webWhatsappUri)) {
-      await launchUrl(webWhatsappUri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('WhatsApp no está instalado en este dispositivo'),
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
-          ),
-        );
+    final nativeUri = Uri.parse('whatsapp://send?text=$message');
+    final webUri = Uri.parse('https://wa.me/?text=$message');
+    try {
+      if (await canLaunchUrl(nativeUri)) {
+        await launchUrl(nativeUri);
+      } else {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
       }
+    } catch (error) {
+      debugPrint('SosScreen share error: $error');
+    }
+  }
+
+  void _safeHaptic(Future<void> Function() feedback) {
+    try {
+      unawaited(feedback());
+    } catch (_) {
+      // Web and devices without a vibration implementation keep working.
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('S.O.S.'),
         backgroundColor: AppTheme.sosRed,
-        leading: _isActivated
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: Icon(Icons.warning_amber_rounded, color: Colors.white),
-              )
-            : null,
-        actions: _isActivated
-            ? [
-                // Indicador de alarma activa
-                Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.mic, size: 14, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text(
-                        'ALARMA ACTIVA',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ]
-            : null,
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
+      body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppTheme.sosRed, AppTheme.sosDarkRed],
@@ -414,716 +363,243 @@ class _SosScreenState extends State<SosScreen>
           ),
         ),
         child: SafeArea(
-          child: _isActivated && _alertSent
-              ? _buildActivatedView(isDark)
-              : _buildIdleOrCountdownView(),
+          child: ValueListenableBuilder<SosSessionState>(
+            valueListenable: _sosService.state,
+            builder: (context, session, _) => switch (session.phase) {
+              SosSessionPhase.idle => _buildIdle(),
+              SosSessionPhase.activeLocked ||
+              SosSessionPhase.activeCanCancel => _buildActive(session),
+              SosSessionPhase.finished => _buildFinished(session),
+            },
+          ),
         ),
       ),
     );
   }
 
-  // ============================================================
-  // VISTA IDLE + COUNTDOWN
-  // ============================================================
-  Widget _buildIdleOrCountdownView() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const SizedBox(height: 12),
-
-        // === INFO BANNER (solo idle) ===
-        if (!_isCountingDown && !_isActivated)
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.info_outline, color: Colors.white70, size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Solo para emergencias reales',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // === TÍTULO ===
-        if (!_isCountingDown && !_isActivated) ...[
-          const SizedBox(height: 28),
+  Widget _buildIdle() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const Spacer(),
+          const Icon(Icons.shield_outlined, color: Colors.white, size: 48),
+          const SizedBox(height: 16),
           const Text(
             '¿Estás en peligro?',
             style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
               color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Presiona el botón para enviar\nuna alerta con tu ubicación',
+            _isCountingDown
+                ? 'La alerta se activará en $_activationCountdown'
+                : _isPreparing
+                ? 'Preparando ubicación…'
+                : 'Mantén la calma. SafeZone compartirá tu ubicación solo durante 60 segundos.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.white.withValues(alpha: 0.8),
-              height: 1.4,
-            ),
+            style: const TextStyle(color: Colors.white70, fontSize: 15),
           ),
-        ],
-
-        const Spacer(),
-
-        // === COUNTDOWN ===
-        if (_isCountingDown)
-          Column(
-            children: [
-              const Text(
-                'ALERTA EN...',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white70,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 16),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: Text(
-                  '$_countdown',
-                  key: ValueKey(_countdown),
-                  style: const TextStyle(
-                    fontSize: 100,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: _cancelSos,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(25),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.4)),
-                  ),
-                  child: const Text(
-                    'CANCELAR',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-        // === BOTÓN SOS ===
-        if (!_isCountingDown && !_isActivated)
-          GestureDetector(
-            onLongPress: _startSos,
-            onTap: _startSos,
-            child: AnimatedBuilder(
-              animation: _pulseScale,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _pulseScale.value,
+          const Spacer(),
+          if (_isCountingDown)
+            _CountdownButton(
+              seconds: _activationCountdown,
+              onCancel: _cancelActivationCountdown,
+            )
+          else
+            ScaleTransition(
+              scale: _buttonPulseScale,
+              child: Semantics(
+                button: true,
+                label: 'Activar alerta S.O.S.',
+                child: GestureDetector(
+                  onTap: _isPreparing ? null : _beginActivation,
+                  onLongPress: _isPreparing ? null : _beginActivation,
                   child: Container(
                     width: 220,
                     height: 220,
                     decoration: BoxDecoration(
+                      color: Colors.white,
                       shape: BoxShape.circle,
-                      gradient: const RadialGradient(
-                        colors: [
-                          Color(0xFFE53935),
-                          Color(0xFFB71C1C),
-                        ],
-                      ),
-                      boxShadow: [
+                      border: Border.all(color: Colors.white70, width: 8),
+                      boxShadow: const [
                         BoxShadow(
-                          color: Colors.red.withValues(alpha: 0.5),
-                          blurRadius: 30,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        width: 4,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.sos, size: 48, color: Colors.white),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'S.O.S.',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 4,
-                          ),
-                        ),
-                        Text(
-                          'Presiona 3s',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
+                          color: Colors.black38,
+                          blurRadius: 28,
+                          spreadRadius: 4,
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
-            ),
-          ),
-
-        const Spacer(),
-
-        // === COMISARÍA MÁS CERCANA (solo idle) ===
-        if (!_isCountingDown && !_isActivated)
-          _buildNearestStationCard(),
-
-        // === UBICACIÓN INFO ===
-        if (!_isCountingDown && !_isActivated)
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Icon(Icons.location_on,
-                    color: Colors.white.withValues(alpha: 0.6), size: 20),
-                const SizedBox(height: 4),
-                Text(
-                  _isLocating
-                      ? 'Obteniendo ubicación...'
-                      : 'Se compartirá tu ubicación GPS exacta',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 13,
+                    child: _isPreparing
+                        ? const Center(child: CircularProgressIndicator())
+                        : const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.sos, color: AppTheme.sosRed, size: 68),
+                              Text(
+                                'ACTIVAR',
+                                style: TextStyle(
+                                  color: AppTheme.sosRed,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
-                if (_userAddress != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      _userAddress!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ============================================================
-  // VISTA ACTIVADA (ALERTA ENVIADA)
-  // ============================================================
-  Widget _buildActivatedView(bool isDark) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-
-          // === HEADER: ALERTA ENVIADA ===
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2),
               ),
             ),
-            child: Column(
-              children: [
-                // Icono pulso
-                AnimatedBuilder(
-                  animation: _mapBlinkController,
-                  builder: (context, child) {
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white
-                            .withValues(alpha: 0.1 + _mapBlinkController.value * 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_outline,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  '🚨 ¡ALERTA ENVIADA!',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Tu ubicación ha sido compartida\ncon la red vecinal de Collique',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    height: 1.4,
-                  ),
-                ),
-                if (_saveError)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'Modo offline - la alerta se guardará cuando tengas conexión',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.amber, fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // === MINI-MAPA con ubicación pulsante ===
-          _buildMiniMap(isDark),
-
-          const SizedBox(height: 16),
-
-          // === UBICACIÓN ACTUAL ===
-          if (_userLat != null || _userAddress != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on, color: Colors.white70, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Tu ubicación actual',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        if (_userAddress != null)
-                          Text(
-                            _userAddress!,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        if (_userLat != null)
-                          Text(
-                            '${_userLat!.toStringAsFixed(4)}, ${_userLng!.toStringAsFixed(4)}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          const SizedBox(height: 16),
-
-          // === COMISARÍA MÁS CERCANA (versión grande) ===
-          _buildNearestStationCard(large: true),
-
+          const Spacer(),
+          const _PrivacyNote(),
           const SizedBox(height: 12),
-
-          // === BOTÓN COMPARTIR POR WHATSAPP ===
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF25D366).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: const Color(0xFF25D366).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF25D366),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.chat, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Compartir por WhatsApp',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        'Envía tu ubicación a tus contactos',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _sendWhatsAppLocation,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF25D366),
-                      borderRadius: BorderRadius.circular(25),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF25D366).withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.send_rounded, color: Colors.white, size: 16),
-                        SizedBox(width: 4),
-                        Text(
-                          'ENVIAR',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // === TELÉFONO DE EMERGENCIA NACIONAL ===
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.amber.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child:
-                      const Icon(Icons.phone, color: Colors.amber, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Emergencia Nacional',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        'Policía: 105 | Serenazgo: 116 | Bomberos: 116',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => _callEmergeny('105'),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'LLAMAR',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // === BOTÓN DESACTIVAR ===
-          ElevatedButton.icon(
-            onPressed: _deactivateAlert,
-            icon: const Icon(Icons.stop_circle_outlined, size: 20),
-            label: const Text(
-              'DESACTIVAR ALERTA',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF212121),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // === CARGANDO (si alerta no enviada aún) ===
-          if (!_alertSent)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 20),
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
+          _EmergencyContacts(onCall: _callEmergency),
         ],
       ),
     );
   }
 
-  // ============================================================
-  // MINI-MAPA CON UBICACIÓN PULSANTE
-  // ============================================================
-  Widget _buildMiniMap(bool isDark) {
-    final lat = _userLat ?? LocationService.colliqueLat;
-    final lng = _userLng ?? LocationService.colliqueLng;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        height: 220,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
-        ),
-        child: Stack(
+  Widget _buildActive(SosSessionState session) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+      children: [
+        Row(
           children: [
-            // Mapa
-            FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: MapConfig.colliqueBounds.contains(LatLng(lat, lng))
-                    ? LatLng(lat, lng)
-                    : MapConfig.colliqueCenter,
-                initialZoom: 16.0,
-                minZoom: 14.0,
-                maxZoom: 17.0,
-                backgroundColor: const Color(0xFFE8ECEF),
-                cameraConstraint: MapConfig.colliqueConstraint,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all,
+            const Icon(Icons.warning_amber_rounded, color: Colors.white),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'ALERTA S.O.S. ACTIVA',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
                 ),
               ),
+            ),
+            _RemainingBadge(seconds: session.remainingSeconds),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _TransmissionCard(session: session, onRetry: _retrySosTransmission),
+        const SizedBox(height: 14),
+        if (_userLat != null && _userLng != null) ...[
+          _buildMiniMap(),
+          const SizedBox(height: 12),
+          const _PrivacyNote(),
+        ] else
+          const _NoLocationCard(),
+        if (_nearestStation != null) ...[
+          const SizedBox(height: 12),
+          _buildNearestStationCard(),
+        ],
+        const SizedBox(height: 14),
+        _EmergencyContacts(onCall: _callEmergency),
+        if (_userLat != null && _userLng != null) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _shareLocation,
+            icon: const Icon(Icons.share_location),
+            label: const Text('Compartir mi ubicación por WhatsApp'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Colors.white54),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        Builder(
+          builder: (context) {
+            final lockedFor = (30 - session.elapsedSeconds).clamp(0, 30);
+            return Column(
               children: [
-                TileLayer(
-                  urlTemplate: isDark
-                      ? MapConfig.darkTileUrl
-                      : MapConfig.lightTileUrl,
-                  userAgentPackageName: 'com.safezone.app',
-                ),
-
-                // Marcador de ubicación del usuario con parpadeo
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: LatLng(lat, lng),
-                      width: 80,
-                      height: 80,
-                      child: AnimatedBuilder(
-                        animation: _mapBlinkController,
-                        builder: (context, child) {
-                          return Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              // Anillo pulsante exterior
-                              Container(
-                                width: 60 + _mapBlinkController.value * 20,
-                                height: 60 + _mapBlinkController.value * 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.red
-                                      .withValues(alpha: 0.2 * (1 - _mapBlinkController.value * 0.5)),
-                                ),
-                              ),
-                              // Anillo medio
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.red
-                                      .withValues(alpha: 0.4 * _mapBlinkOpacity.value),
-                                ),
-                              ),
-                              // Punto central
-                              Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFFFF1744),
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 3,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFFF1744)
-                                          .withValues(alpha: 0.6),
-                                      blurRadius: 10,
-                                      spreadRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: session.canCancel ? _confirmAndCancel : null,
+                    icon: Icon(
+                      session.canCancel ? Icons.stop_circle : Icons.lock_clock,
                     ),
-                  ],
+                    label: Text(
+                      session.canCancel
+                          ? 'FINALIZAR ALERTA (${session.remainingSeconds} s)'
+                          : 'PROTECCIÓN ACTIVA · $lockedFor s',
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.black87,
+                      disabledBackgroundColor: Colors.black38,
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  session.canCancel
+                      ? 'Puedes finalizarla ahora. Si no haces nada, terminará automáticamente.'
+                      : 'Durante los primeros 30 segundos no puede cancelarse accidentalmente.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
-            ),
+            );
+          },
+        ),
+      ],
+    );
+  }
 
-            // Overlay "TÚ ESTÁS AQUÍ"
-            Positioned(
-              top: 8,
-              left: 8,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.person_pin_circle,
-                        color: Color(0xFFFF1744), size: 14),
-                    SizedBox(width: 4),
-                    Text(
-                      'Tú estás aquí',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+  Widget _buildFinished(SosSessionState session) {
+    final retryNeeded =
+        session.transmissionStatus == SosTransmissionStatus.failed &&
+        session.alertId != null;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              retryNeeded ? Icons.cloud_off : Icons.check_circle_outline,
+              color: Colors.white,
+              size: 76,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'S.O.S. finalizado',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
-            // Indicador de peligro
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF1744).withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: AnimatedBuilder(
-                  animation: _mapBlinkController,
-                  builder: (context, child) {
-                    return Text(
-                      '🚨 PELIGRO',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                    );
-                  },
-                ),
+            const SizedBox(height: 10),
+            Text(
+              session.message ?? 'La ubicación dejó de compartirse.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
+            ),
+            if (retryNeeded) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _sosService.retry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar cierre'),
               ),
+            ],
+            const SizedBox(height: 18),
+            OutlinedButton(
+              onPressed: retryNeeded ? null : _sosService.reset,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
+              ),
+              child: const Text('Volver'),
             ),
           ],
         ),
@@ -1131,202 +607,351 @@ class _SosScreenState extends State<SosScreen>
     );
   }
 
-  // ============================================================
-  // TARJETA DE COMISARÍA MÁS CERCANA
-  // ============================================================
-  Widget _buildNearestStationCard({bool large = false}) {
-    if (_nearestStation == null) {
-      return const SizedBox.shrink();
-    }
+  Widget _buildMiniMap() {
+    final point = LatLng(_userLat!, _userLng!);
+    return SizedBox(
+      height: 220,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: point,
+            initialZoom: 16,
+            minZoom: 11,
+            maxZoom: 21,
+            cameraConstraint: const CameraConstraint.unconstrained(),
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: MapConfig.lightTileUrl,
+              userAgentPackageName: 'com.safezone.app',
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: point,
+                  width: 82,
+                  height: 82,
+                  child: AnimatedBuilder(
+                    animation: _mapPulseController,
+                    builder: (context, _) {
+                      final value = _mapPulseController.value;
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 48 + value * 24,
+                            height: 48 + value * 24,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppTheme.sosRed.withValues(
+                                alpha: 0.32 * (1 - value),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: AppTheme.sosRed,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                            ),
+                            child: const Icon(Icons.sos, color: Colors.white),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildNearestStationCard() {
     final station = _nearestStation!;
-    final name = station['name'] as String;
-    final phone = station['phone'] as String;
-    final emergencyPhone = station['emergency_phone'] as String;
-    final type = station['type'] as String;
-
-    final typeLabel = switch (type) {
-      'comisaria' => 'Comisaría',
-      'puesto' => 'Puesto Policial',
-      'serenazgo' => 'Serenazgo',
-      _ => 'Punto de seguridad',
-    };
-
-    final typeIcon = switch (type) {
-      'comisaria' => Icons.local_police,
-      'puesto' => Icons.security,
-      'serenazgo' => Icons.directions_walk,
-      _ => Icons.location_on,
-    };
-
-    final containerWidth = large ? null : 300.0;
-
+    final emergencyPhone = station['emergency_phone'] as String? ?? '105';
     return Container(
-      width: containerWidth,
-      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.local_police, color: Colors.white, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Comisaría verificada más cercana',
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                Text(
+                  station['name'] as String,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _distanceText ?? '',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          IconButton.filled(
+            onPressed: () => _callEmergency(emergencyPhone),
+            icon: const Icon(Icons.call),
+            tooltip: 'Llamar al $emergencyPhone',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountdownButton extends StatelessWidget {
+  final int seconds;
+  final VoidCallback onCancel;
+
+  const _CountdownButton({required this.seconds, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$seconds',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 100,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: onCancel,
+          icon: const Icon(Icons.close),
+          label: const Text('Cancelar activación'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: Colors.white54),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RemainingBadge extends StatelessWidget {
+  final int seconds;
+
+  const _RemainingBadge({required this.seconds});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 58,
+      height: 58,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white70, width: 3),
+      ),
+      child: Text(
+        '$seconds',
+        style: const TextStyle(
+          color: AppTheme.sosRed,
+          fontWeight: FontWeight.w900,
+          fontSize: 22,
+        ),
+      ),
+    );
+  }
+}
+
+class _TransmissionCard extends StatelessWidget {
+  final SosSessionState session;
+  final Future<void> Function() onRetry;
+
+  const _TransmissionCard({required this.session, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = session.transmissionStatus == SosTransmissionStatus.failed;
+    final sending = session.transmissionStatus == SosTransmissionStatus.sending;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: failed ? Colors.amber : Colors.white24),
+      ),
+      child: Row(
+        children: [
+          if (sending)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          else
+            Icon(
+              failed ? Icons.cloud_off : Icons.cloud_done,
+              color: failed ? Colors.amber : Colors.white,
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              session.message ?? '',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+          if (failed && session.isActive)
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(foregroundColor: Colors.amber),
+              child: const Text('Reintentar'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrivacyNote extends StatelessWidget {
+  const _PrivacyNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.lock_outline, color: Colors.white70, size: 16),
+        SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'La ubicación no se conserva públicamente al finalizar.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NoLocationCard extends StatelessWidget {
+  const _NoLocationCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.location_off, color: Colors.amber),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Sin GPS: no se ha compartido ninguna coordenada. Usa los botones de llamada.',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmergencyContacts extends StatelessWidget {
+  final Future<void> Function(String phone) onCall;
+
+  const _EmergencyContacts({required this.onCall});
+
+  static const contacts = <({String label, String phone, IconData icon})>[
+    (label: 'Policía', phone: '105', icon: Icons.local_police),
+    (label: 'SAMU', phone: '106', icon: Icons.medical_services),
+    (label: 'Bomberos', phone: '116', icon: Icons.fire_truck),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1565C0).withValues(alpha: 0.3),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(typeIcon, color: Colors.white, size: 16),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      typeLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Distancia badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.near_me,
-                        size: 12, color: Colors.white.withValues(alpha: 0.7)),
-                    const SizedBox(width: 3),
-                    Text(
-                      _distanceText,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const Text(
+            'Emergencias oficiales del Perú',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
-
-          const SizedBox(height: 8),
-
-          // Teléfonos y botón llamar
-          Row(
-            children: [
-              // Teléfono
-              Expanded(
-                child: Row(
-                  children: [
-                    Icon(Icons.phone_in_talk,
-                        size: 14, color: Colors.white.withValues(alpha: 0.6)),
-                    const SizedBox(width: 6),
-                    Text(
-                      phone,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Botón LLAMAR
-              if (large)
-                GestureDetector(
-                  onTap: () => _callEmergeny(emergencyPhone),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50),
-                      borderRadius: BorderRadius.circular(25),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF4CAF50).withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.phone, color: Colors.white, size: 16),
-                        SizedBox(width: 6),
-                        Text(
-                          'LLAMAR',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: contacts
+                .map(
+                  (contact) => ActionChip(
+                    avatar: Icon(contact.icon, size: 18),
+                    label: Text('${contact.label} ${contact.phone}'),
+                    onPressed: () => onCall(contact.phone),
                   ),
                 )
-              else
-                GestureDetector(
-                  onTap: () => _callEmergeny(emergencyPhone),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.call, color: Colors.white, size: 14),
-                        SizedBox(width: 4),
-                        Text(
-                          'LLAMAR',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+                .toList(growable: false),
+          ),
+          const Divider(height: 22, color: Colors.white24),
+          const Text(
+            'Dependencias PNP verificadas en Collique',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          for (final station in LocationService.policeStations)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.verified_outlined,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${station['name']} · sin teléfono directo verificado',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
+                ],
+              ),
+            ),
         ],
       ),
     );

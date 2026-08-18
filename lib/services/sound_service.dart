@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -10,21 +11,102 @@ import 'package:audioplayers/audioplayers.dart';
 //   ZoneBot:    thinking / happy / idle
 //   Navegación: nav_tap (click suave al cambiar tab)
 //               button_click (botones generales)
-//   SOS:        sos_alarm (sirena urgente)
-//               sos_sent (confirmación de alerta)
+//   SOS:        archivos MP3 definitivos para activación y recepción
 //   Sistema:    welcome (entrada a la app)
 //               report_sent (reporte exitoso)
 //               zonebot_open (abrir chat ZoneBot)
 // ============================================================
 
+/// Coordinates separated SOS alarm plays without using a continuous audio
+/// loop. A new play is scheduled only after the previous one completes.
+class SosAlarmCycleController {
+  SosAlarmCycleController({
+    required this.playOnce,
+    required this.stopPlayback,
+    this.replayPause = const Duration(seconds: 3),
+  });
+
+  final Future<bool> Function() playOnce;
+  final Future<void> Function() stopPlayback;
+  final Duration replayPause;
+
+  Timer? _replayTimer;
+  bool _isActive = false;
+  bool _playInFlight = false;
+  int _generation = 0;
+
+  bool get isActive => _isActive;
+
+  @visibleForTesting
+  bool get hasScheduledReplay => _replayTimer?.isActive ?? false;
+
+  Future<void> start() async {
+    if (_isActive) return;
+    _isActive = true;
+    final generation = ++_generation;
+    await _play(generation);
+  }
+
+  void playbackCompleted() {
+    if (!_isActive) return;
+    _scheduleReplay(_generation);
+  }
+
+  Future<void> stop() async {
+    if (!_isActive && _replayTimer == null && !_playInFlight) return;
+    _isActive = false;
+    _generation++;
+    _replayTimer?.cancel();
+    _replayTimer = null;
+    await stopPlayback();
+  }
+
+  Future<void> _play(int generation) async {
+    if (!_isActive || generation != _generation || _playInFlight) return;
+    _playInFlight = true;
+    final didStart = await playOnce();
+    _playInFlight = false;
+
+    if (!_isActive || generation != _generation) {
+      await stopPlayback();
+      return;
+    }
+    if (!didStart) _scheduleReplay(generation);
+  }
+
+  void _scheduleReplay(int generation) {
+    if (!_isActive || generation != _generation) return;
+    _replayTimer?.cancel();
+    _replayTimer = Timer(replayPause, () {
+      _replayTimer = null;
+      unawaited(_play(generation));
+    });
+  }
+
+  Future<void> dispose() => stop();
+}
+
 /// Servicio de efectos de sonido para toda la app SafeZone.
 class SoundService {
+  static const String sosActivationAsset = 'sos/sos-activitation.mp3';
+  static const String sosReceivedAlertAsset = 'sos/sos-receiveddalert.mp3';
+
   static final SoundService _instance = SoundService._internal();
   factory SoundService() => _instance;
-  SoundService._internal();
+  SoundService._internal() {
+    _sosAlarmCycle = SosAlarmCycleController(
+      playOnce: _playSosActivationOnce,
+      stopPlayback: _stopSosActivationPlayer,
+    );
+    _sosCompletionSubscription = _sosActivationPlayer.onPlayerComplete.listen(
+      (_) => _sosAlarmCycle.playbackCompleted(),
+    );
+  }
 
   final AudioPlayer _player = AudioPlayer();
-  final AudioPlayer _loopingPlayer = AudioPlayer();
+  final AudioPlayer _sosActivationPlayer = AudioPlayer();
+  late final SosAlarmCycleController _sosAlarmCycle;
+  StreamSubscription<void>? _sosCompletionSubscription;
   bool _isMuted = false;
 
   // WAV sintetizados en memoria
@@ -33,8 +115,6 @@ class SoundService {
   Uint8List? _idleWav;
   Uint8List? _navTapWav;
   Uint8List? _buttonClickWav;
-  Uint8List? _sosAlarmWav;
-  Uint8List? _sosSentWav;
   Uint8List? _welcomeWav;
   Uint8List? _reportSentWav;
   Uint8List? _zonebotOpenWav;
@@ -51,14 +131,12 @@ class SoundService {
       _idleWav = _generateIdlePulse();
       _navTapWav = _generateNavTap();
       _buttonClickWav = _generateButtonClick();
-      _sosAlarmWav = _generateSosAlarm();
-      _sosSentWav = _generateSosSent();
       _welcomeWav = _generateWelcome();
       _reportSentWav = _generateReportSent();
       _zonebotOpenWav = _generateZonebotOpen();
       _fanfareWav = _generateFanfare();
       _initialized = true;
-      debugPrint('SoundService: ${11} sonidos sintetizados correctamente');
+      debugPrint('SoundService: 9 sonidos sintetizados correctamente');
     } catch (e) {
       debugPrint('SoundService: Error inicializando: $e');
     }
@@ -68,7 +146,7 @@ class SoundService {
     _isMuted = value;
     if (value) {
       _player.stop();
-      _loopingPlayer.stop();
+      unawaited(stopSosActivationAlarm());
     }
   }
 
@@ -76,22 +154,45 @@ class SoundService {
 
   /// Reproduce un sonido por nombre.
   Future<void> play(String soundName) async {
+    if (soundName == 'sos_received' || soundName == 'sos_alarm') {
+      return playSosReceivedAlert();
+    }
+    if (soundName == 'sos_activation' || soundName == 'sos_sent') {
+      return playSosActivation();
+    }
     if (_isMuted || !_initialized) return;
     try {
       Uint8List? wavData;
       switch (soundName) {
-        case 'thinking':    wavData = _thinkingWav; break;
-        case 'happy':       wavData = _happyWav; break;
-        case 'idle':        wavData = _idleWav; break;
-        case 'nav_tap':     wavData = _navTapWav; break;
-        case 'button_click': wavData = _buttonClickWav; break;
-        case 'sos_alarm':   wavData = _sosAlarmWav; break;
-        case 'sos_sent':    wavData = _sosSentWav; break;
-        case 'welcome':     wavData = _welcomeWav; break;
-        case 'report_sent': wavData = _reportSentWav; break;
-        case 'zonebot_open': wavData = _zonebotOpenWav; break;
-        case 'fanfare':     wavData = _fanfareWav; break;
-        default:            wavData = _idleWav;
+        case 'thinking':
+          wavData = _thinkingWav;
+          break;
+        case 'happy':
+          wavData = _happyWav;
+          break;
+        case 'idle':
+          wavData = _idleWav;
+          break;
+        case 'nav_tap':
+          wavData = _navTapWav;
+          break;
+        case 'button_click':
+          wavData = _buttonClickWav;
+          break;
+        case 'welcome':
+          wavData = _welcomeWav;
+          break;
+        case 'report_sent':
+          wavData = _reportSentWav;
+          break;
+        case 'zonebot_open':
+          wavData = _zonebotOpenWav;
+          break;
+        case 'fanfare':
+          wavData = _fanfareWav;
+          break;
+        default:
+          wavData = _idleWav;
       }
       if (wavData == null) return;
       await _player.stop();
@@ -101,20 +202,66 @@ class SoundService {
     }
   }
 
-  /// Reproduce la alarma SOS en loop continuo (alta intensidad).
-  /// Usa un segundo AudioPlayer dedicado para no interrumpir otros sonidos.
-  Future<void> playLoopingSosAlarm() async {
-    if (_isMuted || !_initialized) return;
+  /// Reproduce una sola vez el MP3 definitivo de activación.
+  Future<void> playSosActivation() async {
+    await _playSosActivationOnce();
+  }
+
+  /// Inicia una única secuencia de alarma personal. Cada repetición comienza
+  /// tres segundos después de que termine la reproducción anterior.
+  Future<void> startSosActivationAlarm() => _sosAlarmCycle.start();
+
+  /// Detiene inmediatamente la reproducción actual y cualquier repetición.
+  Future<void> stopSosActivationAlarm() => _sosAlarmCycle.stop();
+
+  /// Reproduce una sola vez el aviso que reciben los demás usuarios.
+  Future<void> playSosReceivedAlert() async {
+    if (_isMuted) return;
     try {
-      await _loopingPlayer.stop();
-      await _loopingPlayer.setVolume(1.0);
-      await _loopingPlayer.setReleaseMode(ReleaseMode.loop);
-      if (_sosAlarmWav != null) {
-        await _loopingPlayer.play(BytesSource(_sosAlarmWav!));
+      await _player.stop();
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setVolume(1.0);
+      await _player.play(AssetSource(sosReceivedAlertAsset));
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('SoundService: recepción S.O.S. bloqueada: $error');
+        debugPrintStack(stackTrace: stackTrace);
       }
-    } catch (e) {
-      debugPrint('SoundService: Error reproduciendo alarma loop: $e');
     }
+  }
+
+  Future<bool> _playSosActivationOnce() async {
+    if (_isMuted) return false;
+    try {
+      await _sosActivationPlayer.stop();
+      await _sosActivationPlayer.setReleaseMode(ReleaseMode.stop);
+      await _sosActivationPlayer.setVolume(1.0);
+      await _sosActivationPlayer.play(AssetSource(sosActivationAsset));
+      return true;
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('SoundService: activación S.O.S. bloqueada: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return false;
+    }
+  }
+
+  Future<void> _stopSosActivationPlayer() async {
+    try {
+      await _sosActivationPlayer.stop();
+      await _sosActivationPlayer.setReleaseMode(ReleaseMode.stop);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('SoundService: error deteniendo alarma S.O.S.: $error');
+      }
+    }
+  }
+
+  /// API heredada: conserva compatibilidad, pero ya no usa audio en loop.
+  @Deprecated('Usa startSosActivationAlarm().')
+  Future<void> playLoopingSosAlarm() async {
+    await startSosActivationAlarm();
   }
 
   /// Detiene la alarma SOS loop y cualquier otro sonido.
@@ -122,8 +269,7 @@ class SoundService {
     try {
       await _player.stop();
       if (stopLooping) {
-        await _loopingPlayer.stop();
-        await _loopingPlayer.setReleaseMode(ReleaseMode.stop);
+        await stopSosActivationAlarm();
       }
     } catch (e) {
       debugPrint('SoundService: Error deteniendo sonido: $e');
@@ -132,6 +278,15 @@ class SoundService {
 
   /// Atajo para reproducir sonido de estado de ZoneBot.
   Future<void> playStateSound(String state) => play(state);
+
+  @visibleForTesting
+  Future<void> dispose() async {
+    await _sosAlarmCycle.dispose();
+    await _sosCompletionSubscription?.cancel();
+    _sosCompletionSubscription = null;
+    await _sosActivationPlayer.dispose();
+    await _player.dispose();
+  }
 
   // ============================================================
   // SÍNTESIS WAV — Generación de formas de onda
@@ -146,15 +301,21 @@ class SoundService {
     final buffer = ByteData(fileSize);
 
     // RIFF header
-    buffer.setUint8(0, 0x52); buffer.setUint8(1, 0x49);
-    buffer.setUint8(2, 0x46); buffer.setUint8(3, 0x46);
+    buffer.setUint8(0, 0x52);
+    buffer.setUint8(1, 0x49);
+    buffer.setUint8(2, 0x46);
+    buffer.setUint8(3, 0x46);
     buffer.setUint32(4, fileSize - 8, Endian.little);
-    buffer.setUint8(8, 0x57); buffer.setUint8(9, 0x41);
-    buffer.setUint8(10, 0x56); buffer.setUint8(11, 0x45);
+    buffer.setUint8(8, 0x57);
+    buffer.setUint8(9, 0x41);
+    buffer.setUint8(10, 0x56);
+    buffer.setUint8(11, 0x45);
 
     // fmt chunk
-    buffer.setUint8(12, 0x66); buffer.setUint8(13, 0x6D);
-    buffer.setUint8(14, 0x74); buffer.setUint8(15, 0x20);
+    buffer.setUint8(12, 0x66);
+    buffer.setUint8(13, 0x6D);
+    buffer.setUint8(14, 0x74);
+    buffer.setUint8(15, 0x20);
     buffer.setUint32(16, 16, Endian.little);
     buffer.setUint16(20, 1, Endian.little);
     buffer.setUint16(22, numChannels, Endian.little);
@@ -164,8 +325,10 @@ class SoundService {
     buffer.setUint16(34, bitsPerSample, Endian.little);
 
     // data chunk
-    buffer.setUint8(36, 0x64); buffer.setUint8(37, 0x61);
-    buffer.setUint8(38, 0x74); buffer.setUint8(39, 0x61);
+    buffer.setUint8(36, 0x64);
+    buffer.setUint8(37, 0x61);
+    buffer.setUint8(38, 0x74);
+    buffer.setUint8(39, 0x61);
     buffer.setUint32(40, dataSize, Endian.little);
 
     for (int i = 0; i < samples.length; i++) {
@@ -187,7 +350,9 @@ class SoundService {
     final n = (sampleRate * durationSec).toInt();
     return List.generate(n, (i) {
       final t = i / sampleRate;
-      final env = math.min(1.0, t / attack) * math.min(1.0, (durationSec - t) / release);
+      final env =
+          math.min(1.0, t / attack) *
+          math.min(1.0, (durationSec - t) / release);
       return amplitude * env * math.sin(2 * math.pi * freq * t);
     });
   }
@@ -198,10 +363,14 @@ class SoundService {
   Uint8List _generateThinkingChime() {
     const sr = 44100, dur = 0.3;
     final n = (sr * dur).toInt();
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      return 0.3 * (1 - p * 0.5) * math.sin(2 * math.pi * (400 + p * 400) * t);
-    }));
+    return _encodeWav(
+      List.generate(n, (i) {
+        final t = i / sr, p = i / n;
+        return 0.3 *
+            (1 - p * 0.5) *
+            math.sin(2 * math.pi * (400 + p * 400) * t);
+      }),
+    );
   }
 
   /// ============================================================
@@ -218,7 +387,8 @@ class SoundService {
       final end = ((k + 1) * noteLen * sr).toInt().clamp(0, n);
       for (int i = start; i < end; i++) {
         final p = (i - start) / (end - start);
-        s[i] = 0.25 * (1 - p * 0.6) * math.sin(2 * math.pi * notes[k] * (i / sr));
+        s[i] =
+            0.25 * (1 - p * 0.6) * math.sin(2 * math.pi * notes[k] * (i / sr));
       }
     }
     return _encodeWav(s);
@@ -230,10 +400,12 @@ class SoundService {
   Uint8List _generateIdlePulse() {
     const sr = 44100, dur = 1.0;
     final n = (sr * dur).toInt();
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      return 0.15 * math.sin(math.pi * p) * math.sin(2 * math.pi * 220 * t);
-    }));
+    return _encodeWav(
+      List.generate(n, (i) {
+        final t = i / sr, p = i / n;
+        return 0.15 * math.sin(math.pi * p) * math.sin(2 * math.pi * 220 * t);
+      }),
+    );
   }
 
   /// ============================================================
@@ -242,10 +414,12 @@ class SoundService {
   Uint8List _generateNavTap() {
     const sr = 44100, dur = 0.05;
     final n = (sr * dur).toInt();
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      return 0.2 * (1 - p) * math.sin(2 * math.pi * 1000 * t);
-    }));
+    return _encodeWav(
+      List.generate(n, (i) {
+        final t = i / sr, p = i / n;
+        return 0.2 * (1 - p) * math.sin(2 * math.pi * 1000 * t);
+      }),
+    );
   }
 
   /// ============================================================
@@ -255,47 +429,14 @@ class SoundService {
     const sr = 44100, dur = 0.03;
     final n = (sr * dur).toInt();
     final rng = math.Random(42);
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      final tone = 0.15 * (1 - p) * math.sin(2 * math.pi * 1500 * t);
-      final noise = 0.08 * (1 - p) * (rng.nextDouble() * 2 - 1);
-      return tone + noise;
-    }));
-  }
-
-  /// ============================================================
-  // 6. SOS Alarm: sirena ondulante 600→900 Hz, 1.5s
-  // ============================================================
-  Uint8List _generateSosAlarm() {
-    const sr = 44100, dur = 1.5;
-    final n = (sr * dur).toInt();
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      // Ondulación lenta: 600↔900 Hz cada 0.3s
-      final wobble = 600 + 300 * (math.sin(2 * math.pi * (1 / 0.3) * t) + 1) / 2;
-      final env = 1.0 - p * 0.3;
-      return 0.35 * env * math.sin(2 * math.pi * wobble * t);
-    }));
-  }
-
-  /// ============================================================
-  // 7. SOS Sent: dos tonos ascendentes, 0.6s
-  // ============================================================
-  Uint8List _generateSosSent() {
-    const sr = 44100, dur = 0.6;
-    final n = (sr * dur).toInt();
-    final s = List.filled(n, 0.0);
-    // Primer tono: 800 Hz, segundo: 1200 Hz
-    for (int k = 0; k < 2; k++) {
-      final start = (k * dur / 2 * sr).toInt();
-      final end = ((k + 1) * dur / 2 * sr).toInt().clamp(0, n);
-      final freq = 800.0 + k * 400;
-      for (int i = start; i < end; i++) {
-        final p = (i - start) / (end - start);
-        s[i] = 0.3 * (1 - p * 0.4) * math.sin(2 * math.pi * freq * (i / sr));
-      }
-    }
-    return _encodeWav(s);
+    return _encodeWav(
+      List.generate(n, (i) {
+        final t = i / sr, p = i / n;
+        final tone = 0.15 * (1 - p) * math.sin(2 * math.pi * 1500 * t);
+        final noise = 0.08 * (1 - p) * (rng.nextDouble() * 2 - 1);
+        return tone + noise;
+      }),
+    );
   }
 
   /// ============================================================
@@ -355,10 +496,12 @@ class SoundService {
   Uint8List _generateZonebotOpen() {
     const sr = 44100, dur = 0.3;
     final n = (sr * dur).toInt();
-    return _encodeWav(List.generate(n, (i) {
-      final t = i / sr, p = i / n;
-      final freq = 600 + p * 300;
-      return 0.25 * (1 - p * 0.3) * math.sin(2 * math.pi * freq * t);
-    }));
+    return _encodeWav(
+      List.generate(n, (i) {
+        final t = i / sr, p = i / n;
+        final freq = 600 + p * 300;
+        return 0.25 * (1 - p * 0.3) * math.sin(2 * math.pi * freq * t);
+      }),
+    );
   }
 }

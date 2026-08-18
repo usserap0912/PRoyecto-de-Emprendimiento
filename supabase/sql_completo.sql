@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_code TEXT NOT NULL REFERENCES profiles(user_code),
   zone INTEGER NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('robo', 'sospechoso', 'extorsion', 'alumbrado', 'otros')),
+  category TEXT NOT NULL CHECK (category IN ('robo', 'sos', 'sospechoso', 'extorsion', 'alumbrado', 'otros')),
   description TEXT NOT NULL,
   image_url TEXT,
   video_url TEXT,
@@ -96,11 +96,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created
 CREATE TABLE IF NOT EXISTS sos_alerts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_code TEXT NOT NULL REFERENCES profiles(user_code),
-  latitude DOUBLE PRECISION NOT NULL,
-  longitude DOUBLE PRECISION NOT NULL,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   address TEXT,
   status TEXT DEFAULT 'activo' CHECK (status IN ('activo', 'cancelado', 'atendido')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_sos_alerts_status ON sos_alerts(status);

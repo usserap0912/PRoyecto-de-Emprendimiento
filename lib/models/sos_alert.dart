@@ -29,6 +29,33 @@ class SosAlert {
     );
   }
 
+  static SosAlert? tryFromMap(Map<String, dynamic> map) {
+    final latitude = map['latitude'];
+    final longitude = map['longitude'];
+    final createdAt = DateTime.tryParse(map['created_at'] as String? ?? '');
+    if (map['id'] is! String ||
+        map['user_code'] is! String ||
+        latitude is! num ||
+        longitude is! num ||
+        createdAt == null) {
+      return null;
+    }
+    return SosAlert(
+      id: map['id'] as String,
+      userCode: map['user_code'] as String,
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+      address: null,
+      status: map['status'] as String? ?? 'activo',
+      createdAt: createdAt,
+    );
+  }
+
+  bool isPubliclyActiveAt(DateTime now) =>
+      status == 'activo' &&
+      !createdAt.isAfter(now.add(const Duration(seconds: 5))) &&
+      now.difference(createdAt) <= const Duration(seconds: 75);
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

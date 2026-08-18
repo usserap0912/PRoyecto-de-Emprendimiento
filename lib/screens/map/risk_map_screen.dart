@@ -8,11 +8,18 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:safezone/config/map_config.dart';
+import 'package:safezone/config/risk_map_camera_config.dart';
+import 'package:safezone/models/report.dart';
+import 'package:safezone/models/territorial_zone.dart';
+import 'package:safezone/models/sos_alert.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/location_service.dart';
+import 'package:safezone/services/permission_service.dart';
 import 'package:safezone/services/sound_service.dart';
-import 'package:safezone/services/sos_state_service.dart';
+import 'package:safezone/services/sos_service.dart';
+import 'package:safezone/services/sos_realtime_service.dart';
+import 'package:safezone/services/territory_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 class RiskMapScreen extends StatefulWidget {
@@ -25,10 +32,19 @@ class RiskMapScreen extends StatefulWidget {
 }
 
 class _RiskMapScreenState extends State<RiskMapScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final SupabaseService _supabase = SupabaseService();
   final LocationService _locationService = LocationService();
+  final PermissionService _permissionService = PermissionService();
+  final TerritoryService _territoryService = TerritoryService();
+  final SosService _sosService = SosService();
+  final SosRealtimeService _sosRealtimeService = SosRealtimeService();
   final MapController _mapController = MapController();
+  List<TerritorialZone> _verifiedTerritorialZones = const [];
+  CameraFit? _initialTerritoryCameraFit;
+  bool _isTerritoryLoading = true;
+  Object? _territoryLoadError;
+  bool _isMapReady = false;
   // Reportes en tiempo real vía stream de Supabase
   List<Map<String, dynamic>> _reports = [];
   StreamSubscription<List<Map<String, dynamic>>>? _reportsSubscription;
@@ -44,7 +60,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
   // Check-in de zona segura
   bool _isCheckingIn = false;
-  bool _hasAutoCentered = false;
 
   // Parpadeo del punto de ubicación durante S.O.S.
   late final AnimationController _sosBlinkController;
@@ -64,11 +79,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   // para que el mapa nunca se quede en blanco.
   bool _usingFallbackTiles = false;
 
-  String get _currentTileUrl => _usingFallbackTiles
-      ? MapConfig.fallbackTileUrl
-      : MapConfig.lightTileUrl;
+  String get _currentTileUrl =>
+      _usingFallbackTiles ? MapConfig.fallbackTileUrl : MapConfig.lightTileUrl;
 
-  // Colores distintivos para cada zona (gradiente de azul a rojo)
+  // Colores discretos para las seis referencias territoriales con geometría.
   static final List<Color> _zoneColors = [
     const Color(0xFF1565C0), // Z1 - Azul intenso
     const Color(0xFF1E88E5), // Z2 - Azul
@@ -76,14 +90,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     const Color(0xFF26A69A), // Z4 - Teal
     const Color(0xFF66BB6A), // Z5 - Verde
     const Color(0xFF9CCC65), // Z6 - Verde lima
-    const Color(0xFFFFEE58), // Z7 - Amarillo
-    const Color(0xFFFFCA28), // Z8 - Ámbar
-    const Color(0xFFFFA726), // Z9 - Naranja
-    const Color(0xFFEF6C00), // Z10 - Naranja intenso
-    const Color(0xFFE65100), // Z11 - Naranja oscuro
-    const Color(0xFFBF360C), // Z12 - Rojo ladrillo
-    const Color(0xFFD32F2F), // Z13 - Rojo
-    const Color(0xFFB71C1C), // Z14 - Rojo oscuro
   ];
 
   // ================================================================
@@ -117,16 +123,60 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     );
 
     // Arrancar/detener el parpadeo según el estado del S.O.S.
-    SosStateService().isSosActive.addListener(_onSosStateChanged);
+    _sosService.state.addListener(_onSosStateChanged);
+    _sosService.localCoordinates.addListener(_onLocalSosLocationChanged);
+    _sosRealtimeService.activeAlerts.addListener(_onRemoteSosChanged);
     _onSosStateChanged();
 
+    _loadTerritorialZones();
     _initReportsStream();
-    _loadUserLocation();
+  }
+
+  Future<void> _loadTerritorialZones() async {
+    try {
+      final zones = await _territoryService.loadVerifiedZones();
+      final cameraFit = RiskMapCameraConfig.initialCameraFit(
+        zones: zones,
+        verifiedHealthCenters: LocationService.healthCenters,
+      );
+      if (!mounted) return;
+      setState(() {
+        _verifiedTerritorialZones = zones;
+        _initialTerritoryCameraFit = cameraFit;
+        _isTerritoryLoading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Error cargando GeoJSON territorial: $error\n$stackTrace');
+      if (!mounted) return;
+      setState(() {
+        _territoryLoadError = error;
+        _isTerritoryLoading = false;
+      });
+    }
+  }
+
+  TerritorialZone? _territorialZoneForNumber(int zoneNumber) {
+    for (final zone in _verifiedTerritorialZones) {
+      if (zone.zoneNumber == zoneNumber) return zone;
+    }
+    return null;
+  }
+
+  void _fitTerritoryCamera() {
+    final cameraFit = _initialTerritoryCameraFit;
+    if (!_isMapReady || cameraFit == null) return;
+    _mapController.fitCamera(cameraFit);
+  }
+
+  void _onMapReady() {
+    _isMapReady = true;
   }
 
   /// Inicia o detiene la animación de parpadeo según el estado del S.O.S.
   void _onSosStateChanged() {
-    final active = SosStateService().active;
+    final active =
+        _sosService.isActive ||
+        _sosRealtimeService.activeAlerts.value.isNotEmpty;
     if (active) {
       _sosBlinkController.repeat(reverse: true);
     } else {
@@ -136,9 +186,17 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     if (mounted) setState(() {});
   }
 
+  void _onRemoteSosChanged() => _onSosStateChanged();
+
+  void _onLocalSosLocationChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
-    SosStateService().isSosActive.removeListener(_onSosStateChanged);
+    _sosService.state.removeListener(_onSosStateChanged);
+    _sosService.localCoordinates.removeListener(_onLocalSosLocationChanged);
+    _sosRealtimeService.activeAlerts.removeListener(_onRemoteSosChanged);
     _reportsSubscription?.cancel();
     _positionSubscription?.cancel();
     _sosBlinkController.dispose();
@@ -151,35 +209,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   Future<void> _loadUserLocation() async {
     setState(() => _isLocatingUser = true);
     try {
+      if (!await _ensureMapLocationPermission()) return;
       final position = await _locationService.getCurrentLocation();
       if (mounted && position != null) {
         _updatePosition(position.latitude, position.longitude);
-
-        // Auto-centrar en la ubicación del usuario al cargar (solo la primera vez)
-        if (!_hasAutoCentered && mounted) {
-          _hasAutoCentered = true;
-          _mapController.move(LatLng(position.latitude, position.longitude), 15.5);
-          
-          // Mostrar snackbar de bienvenida con ubicación
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.my_location, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Ubicación detectada. Mapa centrado en tu posición.'),
-                  ),
-                ],
-              ),
-              backgroundColor: const Color(0xFF2196F3),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              duration: const Duration(seconds: 3),
-              margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
-            ),
-          );
-        }
 
         // Iniciar tracking continuo
         _startContinuousTracking();
@@ -191,19 +224,61 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     }
   }
 
+  Future<bool> _ensureMapLocationPermission() async {
+    if (await _permissionService.hasLocationPermission()) return true;
+    if (!mounted) return false;
+    final shouldRequest =
+        await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Usar tu ubicación en el mapa'),
+            content: const Text(
+              'SafeZone usa el GPS para mostrar tu posición, calcular referencias '
+              'cercanas y destacar tu marcador si activas un S.O.S. No publica '
+              'tu ubicación desde el mapa.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Ahora no'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Permitir'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!shouldRequest) return false;
+    final result = await _permissionService.requestLocationPermission();
+    if (result == AppPermissionResult.granted) return true;
+    if (!mounted) return false;
+    final text = result == AppPermissionResult.permanentlyDenied
+        ? 'Ubicación bloqueada. Habilítala en Configuración si deseas usarla.'
+        : 'No se habilitó la ubicación. El mapa sigue disponible.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text), behavior: SnackBarBehavior.floating),
+    );
+    return false;
+  }
+
   /// Inicia el stream de posición continua (se actualiza cada 5 metros).
   void _startContinuousTracking() {
     _positionSubscription?.cancel();
     final stream = _locationService.getPositionStream();
     if (stream == null) return;
 
-    _positionSubscription = stream.listen((Position pos) {
-      if (mounted) {
-        _updatePosition(pos.latitude, pos.longitude);
-      }
-    }, onError: (Object error) {
-      debugPrint('Error en tracking continuo: $error');
-    });
+    _positionSubscription = stream.listen(
+      (Position pos) {
+        if (mounted) {
+          _updatePosition(pos.latitude, pos.longitude);
+        }
+      },
+      onError: (Object error) {
+        debugPrint('Error en tracking continuo: $error');
+      },
+    );
   }
 
   /// Actualiza la posición del usuario y detecta la zona actual.
@@ -222,8 +297,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     if (_usingFallbackTiles || !mounted) return;
 
     setState(() => _usingFallbackTiles = true);
-    debugPrint('RiskMapScreen: Proveedor de tiles principal falló. '
-        'Cambiando a OpenStreetMap (respaldo).');
+    debugPrint(
+      'RiskMapScreen: Proveedor de tiles principal falló. '
+      'Cambiando a OpenStreetMap (respaldo).',
+    );
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -258,7 +335,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   /// (el parpadeo lo aplica la animación en el marcador).
   Color _userDotColor() {
     // S.O.S. propio activo → rojo siempre
-    if (SosStateService().active) return AppTheme.sosRed;
+    if (_sosService.isActive) return AppTheme.sosRed;
 
     // Sin ubicación fija → verde (estado por defecto)
     if (_currentZone == null) return Colors.green;
@@ -271,26 +348,34 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     // Sin reportes en la zona → segura (verde)
     if (zoneReports.isEmpty) return Colors.green;
 
-    var hasHigh = false;
-    var hasMedium = false;
-    var hasCritical = false;
+    var hasDanger = false;
+    var hasWarning = false;
 
     for (final r in zoneReports) {
-      final risk = (r['risk_level'] as String?) ?? 'baja';
-      if (risk == 'critica') hasCritical = true;
-      if (risk == 'alta') hasHigh = true;
-      if (risk == 'media') hasMedium = true;
+      final severity = (r['tag'] as String?) ?? 'verde';
+      if (severity == 'rojo') hasDanger = true;
+      if (severity == 'amarillo') hasWarning = true;
     }
 
-    if (hasCritical) return AppTheme.sosRed; // Rojo
-    if (hasHigh) return const Color(0xFFFF6D00); // Naranja
-    if (hasMedium) return const Color(0xFFFFC107); // Amarillo
+    if (hasDanger) return AppTheme.sosRed;
+    if (hasWarning) return const Color(0xFFFFC107);
 
-    // Solo reportes de riesgo bajo
+    // Solo reportes informativos o positivos.
     return Colors.greenAccent;
   }
 
-  /// Centra el mapa en la ubicación del usuario o en Collique.
+  double? get _displayUserLat =>
+      _sosService.isActive && _sosService.localCoordinates.value != null
+      ? _sosService.localCoordinates.value!.latitude
+      : _userLat;
+
+  double? get _displayUserLng =>
+      _sosService.isActive && _sosService.localCoordinates.value != null
+      ? _sosService.localCoordinates.value!.longitude
+      : _userLng;
+
+  /// Centra el mapa en la ubicación del usuario o recupera el encuadre
+  /// territorial calculado desde las referencias verificadas.
   Future<void> _recenterMap() async {
     if (_userLat != null && _userLng != null) {
       _mapController.move(LatLng(_userLat!, _userLng!), 15.5);
@@ -300,15 +385,14 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       if (_userLat != null && _userLng != null && mounted) {
         _mapController.move(LatLng(_userLat!, _userLng!), 15.5);
       } else {
-        // Fallback: centro de Collique
-        _mapController.move(
-          LatLng(LocationService.colliqueLat, LocationService.colliqueLng),
-          14.5,
-        );
+        _fitTerritoryCamera();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Centrado en Collique. Activa el GPS para ver tu ubicación.'),
+              content: Text(
+                'Mostrando las referencias territoriales de Collique. '
+                'Activa el GPS para ver tu ubicación.',
+              ),
               behavior: SnackBarBehavior.floating,
               duration: Duration(seconds: 2),
             ),
@@ -323,32 +407,34 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   // ================================================================
   void _initReportsStream() {
     try {
-      final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+      final sevenDaysAgo = DateTime.now()
+          .subtract(const Duration(days: 7))
+          .toIso8601String();
       _reportsSubscription = _supabase.client
           .from('reports')
           .stream(primaryKey: ['id'])
           .gte('created_at', sevenDaysAgo)
           .order('created_at', ascending: false)
           .listen(
-        (List<Map<String, dynamic>> data) {
-          if (mounted) {
-            setState(() {
-              _reports = data;
-              _isLoading = false;
-              _streamError = false;
-            });
-          }
-        },
-        onError: (Object error) {
-          debugPrint('Error en stream de reportes: $error');
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-              _streamError = true;
-            });
-          }
-        },
-      );
+            (List<Map<String, dynamic>> data) {
+              if (mounted) {
+                setState(() {
+                  _reports = data;
+                  _isLoading = false;
+                  _streamError = false;
+                });
+              }
+            },
+            onError: (Object error) {
+              debugPrint('Error en stream de reportes: $error');
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                  _streamError = true;
+                });
+              }
+            },
+          );
 
       Future.delayed(const Duration(seconds: 10), () {
         if (mounted && _isLoading) {
@@ -414,7 +500,9 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   // MARCADORES DE REPORTES
   // ================================================================
   List<Marker> _construirMarcadores() {
-    return _reports.map((report) {
+    return _reports.where((report) => report['category'] != 'sos').map((
+      report,
+    ) {
       final lat = (report['lat'] ?? report['latitude']) as num?;
       final lng = (report['lng'] ?? report['longitude']) as num?;
       if (lat == null || lng == null) {
@@ -441,6 +529,124 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     }).toList();
   }
 
+  List<Marker> _buildRemoteSosMarkers() {
+    return _sosRealtimeService.activeAlerts.value
+        .map((alert) {
+          return Marker(
+            point: LatLng(alert.latitude, alert.longitude),
+            width: 86,
+            height: 86,
+            child: GestureDetector(
+              onTap: () => _showRemoteSosDetails(alert),
+              child: AnimatedBuilder(
+                animation: _sosBlinkController,
+                builder: (context, _) {
+                  final pulse = _sosBlinkOpacity.value;
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 48 + pulse * 28,
+                        height: 48 + pulse * 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppTheme.sosRed.withValues(
+                            alpha: 0.38 * (1 - pulse * 0.45),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: AppTheme.sosRed,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.sosRed.withValues(alpha: 0.55),
+                              blurRadius: 14,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.sos,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  void _showRemoteSosDetails(SosAlert alert) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.sos, color: AppTheme.sosRed, size: 30),
+                  SizedBox(width: 10),
+                  Text(
+                    'Alerta S.O.S. activa',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'El marcador muestra una ubicación aproximada compartida solo durante la emergencia.',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Activada ${timeago.format(alert.createdAt, locale: 'es')}.',
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => _callPhone('105'),
+                icon: const Icon(Icons.call),
+                label: const Text('Llamar a la Policía · 105'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _callPhone(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        return;
+      }
+    } catch (error) {
+      debugPrint('RiskMapScreen phone launch error: $error');
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Este dispositivo no puede llamar. Marca $phone.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   // ================================================================
   // BOTTOM SHEET DE DETALLE DEL REPORTE (con "Cómo llegar")
   // ================================================================
@@ -448,10 +654,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     final reportLat = (report['lat'] ?? report['latitude']) as num?;
     final reportLng = (report['lng'] ?? report['longitude']) as num?;
     final zoneNumber = report['zone_number'] ?? report['zone'];
-    final riskLevel = report['risk_level'] as String? ?? 'baja';
+    final severity = report['tag'] as String? ?? 'verde';
     final category = report['category'] as String? ?? 'otros';
     final description = report['description'] as String? ?? '';
-    final mediaUrl = report['media_url'] as String?;
+    final imageUrl = (report['image_url'] ?? report['media_url']) as String?;
     final createdAtStr = report['created_at'] as String?;
     final createdAt = createdAtStr != null
         ? DateTime.tryParse(createdAtStr)
@@ -462,9 +668,15 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
     // Distancia desde el usuario al reporte
     String distanciaTexto = '';
-    if (_userLat != null && _userLng != null && reportLat != null && reportLng != null) {
+    if (_userLat != null &&
+        _userLng != null &&
+        reportLat != null &&
+        reportLng != null) {
       final dist = LocationService.calculateDistance(
-        _userLat!, _userLng!, reportLat.toDouble(), reportLng.toDouble(),
+        _userLat!,
+        _userLng!,
+        reportLat.toDouble(),
+        reportLng.toDouble(),
       );
       distanciaTexto = LocationService.formatDistance(dist);
     }
@@ -534,7 +746,11 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
                       children: [
-                        Icon(Icons.near_me, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                        Icon(
+                          Icons.near_me,
+                          size: 14,
+                          color: isDark ? Colors.white54 : Colors.black54,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'A $distanciaTexto de ti',
@@ -555,9 +771,11 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                     child: Row(
                       children: [
-                        Icon(Icons.streetview,
-                            size: 14,
-                            color: isDark ? Colors.white54 : Colors.black54),
+                        Icon(
+                          Icons.streetview,
+                          size: 14,
+                          color: isDark ? Colors.white54 : Colors.black54,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -579,9 +797,11 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                     child: Row(
                       children: [
-                        Icon(Icons.person_outline,
-                            size: 14,
-                            color: isDark ? Colors.white38 : Colors.black38),
+                        Icon(
+                          Icons.person_outline,
+                          size: 14,
+                          color: isDark ? Colors.white38 : Colors.black38,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Reportado por ${report['user_code']}',
@@ -597,7 +817,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 const SizedBox(height: 12),
 
                 // Imagen (si existe)
-                if (mediaUrl != null && mediaUrl.isNotEmpty) ...[
+                if (imageUrl != null && imageUrl.isNotEmpty) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
@@ -611,13 +831,17 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.network(
-                          mediaUrl,
+                          imageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
                               color: Colors.grey.withValues(alpha: 0.1),
                               child: const Center(
-                                child: Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                                child: Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey,
+                                  size: 40,
+                                ),
                               ),
                             );
                           },
@@ -626,7 +850,9 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                             return Container(
                               color: Colors.grey.withValues(alpha: 0.05),
                               child: const Center(
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             );
                           },
@@ -645,47 +871,76 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     runSpacing: 8,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1565C0).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: const Color(0xFF1565C0).withValues(alpha: 0.2),
+                            color: const Color(
+                              0xFF1565C0,
+                            ).withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(_categoryIconFor(category), size: 14, color: const Color(0xFF1565C0)),
+                            Icon(
+                              _categoryIconFor(category),
+                              size: 14,
+                              color: const Color(0xFF1565C0),
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               _categoryLabelFor(category),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1565C0)),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1565C0),
+                              ),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: color.withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.warning_amber_rounded, size: 14, color: color),
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              size: 14,
+                              color: color,
+                            ),
                             const SizedBox(width: 6),
                             Text(
-                              _labelRiesgo(riskLevel),
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+                              Report.tagLabelFor(severity),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: color,
+                              ),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(20),
@@ -693,7 +948,11 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.access_time, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                            Icon(
+                              Icons.access_time,
+                              size: 14,
+                              color: isDark ? Colors.white54 : Colors.black54,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               timeAgoText,
@@ -745,7 +1004,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                             icon: const Icon(Icons.directions, size: 18),
                             label: const Text(
                               'Cómo llegar',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2196F3),
@@ -767,35 +1029,37 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     );
   }
 
-  String _labelRiesgo(String riskLevel) {
-    switch (riskLevel) {
-      case 'baja': return 'Baja';
-      case 'media': return 'Media';
-      case 'alta': return 'Alta';
-      case 'critica': return 'Critica';
-      default: return riskLevel;
-    }
-  }
-
   String _categoryLabelFor(String category) {
     switch (category) {
-      case 'robo': return 'Robo';
-      case 'sos': return 'S.O.S.';
-      case 'sospechoso': return 'Sospechoso';
-      case 'extorsion': return 'Extorsion';
-      case 'alumbrado': return 'Alumbrado';
-      default: return 'Otros';
+      case 'robo':
+        return 'Robo';
+      case 'sos':
+        return 'S.O.S.';
+      case 'sospechoso':
+        return 'Sospechoso';
+      case 'extorsion':
+        return 'Extorsion';
+      case 'alumbrado':
+        return 'Alumbrado';
+      default:
+        return 'Otros';
     }
   }
 
   IconData _categoryIconFor(String category) {
     switch (category) {
-      case 'robo': return Icons.visibility_off;
-      case 'sos': return Icons.sos;
-      case 'sospechoso': return Icons.person_search;
-      case 'extorsion': return Icons.block;
-      case 'alumbrado': return Icons.lightbulb_outline;
-      default: return Icons.info_outline;
+      case 'robo':
+        return Icons.visibility_off;
+      case 'sos':
+        return Icons.sos;
+      case 'sospechoso':
+        return Icons.person_search;
+      case 'extorsion':
+        return Icons.block;
+      case 'alumbrado':
+        return Icons.lightbulb_outline;
+      default:
+        return Icons.info_outline;
     }
   }
 
@@ -858,20 +1122,24 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        success ? 'Zona segura registrada' : 'Check-in en pausa',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        success
+                            ? 'Zona segura registrada'
+                            : 'Check-in en pausa',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
-                      Text(
-                        message,
-                        style: const TextStyle(fontSize: 12),
-                      ),
+                      Text(message, style: const TextStyle(fontSize: 12)),
                     ],
                   ),
                 ),
               ],
             ),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -884,14 +1152,20 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 SnackBar(
                   content: Row(
                     children: [
-                      const Icon(Icons.emoji_events, color: Colors.amber, size: 18),
+                      const Icon(
+                        Icons.emoji_events,
+                        color: Colors.amber,
+                        size: 18,
+                      ),
                       const SizedBox(width: 8),
                       Text('+3 puntos vecinales! Total: $totalPoints pts'),
                     ],
                   ),
                   backgroundColor: AppTheme.primaryGreen,
                   behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   duration: const Duration(seconds: 2),
                 ),
               );
@@ -953,12 +1227,25 @@ class _RiskMapScreenState extends State<RiskMapScreen>
         iconColor = const Color(0xFFE53935);
         break;
       case 'postas':
+      case 'centro_salud':
         icon = Icons.medical_services;
         iconColor = const Color(0xFFF44336);
         break;
       case 'museo':
         icon = Icons.museum;
         iconColor = const Color(0xFF8D6E63);
+        break;
+      case 'grifo':
+        icon = Icons.local_gas_station;
+        iconColor = const Color(0xFF546E7A);
+        break;
+      case 'equipamiento_social':
+        icon = Icons.groups;
+        iconColor = const Color(0xFF00897B);
+        break;
+      case 'cementerio':
+        icon = Icons.account_balance;
+        iconColor = const Color(0xFF616161);
         break;
       default:
         icon = Icons.location_on;
@@ -990,117 +1277,25 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     );
   }
 
-  /// Filtra las comisarias por proximidad al centro de Collique.
-  List<Marker> _filtrarComisariasCercanas() {
-    final refLat = LocationService.colliqueLat;
-    final refLng = LocationService.colliqueLng;
-    const double maxRadiusMeters = 2500;
-
-    final stations = LocationService.policeStations.where((s) {
-      final lat = s['lat'] as double;
-      final lng = s['lng'] as double;
-      final distance = LocationService.calculateDistance(refLat, refLng, lat, lng);
-      return distance <= maxRadiusMeters;
-    }).toList();
-
-    stations.sort((a, b) {
-      final distA = LocationService.calculateDistance(
-        refLat, refLng, a['lat'] as double, a['lng'] as double,
-      );
-      final distB = LocationService.calculateDistance(
-        refLat, refLng, b['lat'] as double, b['lng'] as double,
-      );
-      return distA.compareTo(distB);
-    });
-
-    return stations.map((station) {
-      return _buildPoiMarker(
-        lat: station['lat'] as double,
-        lng: station['lng'] as double,
-        poiData: station,
-      );
-    }).toList();
+  /// Construye marcadores exclusivamente desde el catálogo de producción.
+  List<Marker> _construirMarcadoresPoi() {
+    return LocationService.allPois
+        .where(LocationService.isProductionPoi)
+        .map((poi) {
+          return _buildPoiMarker(
+            lat: poi['lat'] as double,
+            lng: poi['lng'] as double,
+            poiData: poi,
+          );
+        })
+        .toList(growable: false);
   }
 
-  /// Construye marcadores para colegios cercanos.
-  List<Marker> _construirMarcadoresColegios() {
-    return LocationService.schools.map((school) {
-      return _buildPoiMarker(
-        lat: school['lat'] as double,
-        lng: school['lng'] as double,
-        poiData: school,
-      );
-    }).toList();
-  }
-
-  /// Construye marcadores para parques cercanos.
-  List<Marker> _construirMarcadoresParques() {
-    return LocationService.parks.map((park) {
-      return _buildPoiMarker(
-        lat: park['lat'] as double,
-        lng: park['lng'] as double,
-        poiData: park,
-      );
-    }).toList();
-  }
-
-  /// Construye marcadores para mercados cercanos.
-  List<Marker> _construirMarcadoresMercados() {
-    return LocationService.markets.map((market) {
-      return _buildPoiMarker(
-        lat: market['lat'] as double,
-        lng: market['lng'] as double,
-        poiData: market,
-      );
-    }).toList();
-  }
-
-  /// Construye marcadores para centros de salud cercanos.
-  List<Marker> _construirMarcadoresSalud() {
-    return LocationService.healthCenters.map((hc) {
-      return _buildPoiMarker(
-        lat: hc['lat'] as double,
-        lng: hc['lng'] as double,
-        poiData: hc,
-      );
-    }).toList();
-  }
-
-  /// Muestra un Bottom Sheet con la información de una zona de Collique.
-  void _mostrarInfoZona(
-      int zoneNum, String zoneName, Map<String, double> coords) {
-    // Reportes de esta zona
-    final zoneReports = _reports.where((r) {
-      final zone = r['zone_number'] ?? r['zone'];
-      return zone == zoneNum;
-    }).toList();
-
-    // Niveles de riesgo presentes en la zona
-    final riskLevels = zoneReports
-        .map((r) => (r['risk_level'] as String?) ?? 'baja')
-        .toSet();
-    final hasCritical = riskLevels.contains('critica');
-    final hasHigh = riskLevels.contains('alta');
-    final hasMedium = riskLevels.contains('media');
-
-    final Color riskColor;
-    final String riskLabel;
-    if (hasCritical) {
-      riskColor = AppTheme.sosRed;
-      riskLabel = 'Crítico';
-    } else if (hasHigh) {
-      riskColor = const Color(0xFFFF6D00);
-      riskLabel = 'Alto';
-    } else if (hasMedium) {
-      riskColor = const Color(0xFFFFC107);
-      riskLabel = 'Medio';
-    } else if (zoneReports.isNotEmpty) {
-      riskColor = Colors.greenAccent;
-      riskLabel = 'Bajo';
-    } else {
-      riskColor = Colors.green;
-      riskLabel = 'Zona tranquila';
-    }
+  /// Muestra la naturaleza referencial del punto sin atribuirle límites.
+  void _mostrarInfoZona(TerritorialZone zone) {
+    final point = zone.referencePoint;
+    if (point == null) return;
+    final zoneColor = _zoneColors[zone.zoneNumber - 1];
 
     showModalBottomSheet(
       context: context,
@@ -1121,7 +1316,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 Center(
                   child: Container(
                     margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: Colors.grey.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
@@ -1129,25 +1325,25 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   ),
                 ),
 
-                // Icono + nombre
                 Container(
-                  width: 56, height: 56,
+                  width: 56,
+                  height: 56,
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
-                    color: _zoneColors[zoneNum - 1].withValues(alpha: 0.15),
+                    color: zoneColor.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    Icons.location_city,
+                    Icons.location_on_outlined,
                     size: 28,
-                    color: _zoneColors[zoneNum - 1],
+                    color: zoneColor,
                   ),
                 ),
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
-                    'Zona $zoneNum — $zoneName',
+                    zone.name,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 18,
@@ -1159,27 +1355,49 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
                 const SizedBox(height: 16),
 
-                // Resumen de riesgo
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: riskColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: riskColor.withValues(alpha: 0.3)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  child: Row(
+                  decoration: BoxDecoration(
+                    color: zoneColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: zoneColor.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_amber_rounded, color: riskColor, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Riesgo: $riskLabel',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: riskColor,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.place_outlined,
+                            color: zoneColor,
+                            size: 20,
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Ubicación referencial',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: zoneColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Este punto no representa el centro oficial de la zona.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: isDark ? Colors.white70 : Colors.black87,
                         ),
                       ),
                     ],
@@ -1188,10 +1406,12 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
                 const SizedBox(height: 12),
 
-                // Reportes de la zona
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.05)
@@ -1200,13 +1420,15 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.article_outlined,
-                          size: 20,
-                          color: isDark ? Colors.white70 : Colors.black54),
+                      Icon(
+                        Icons.layers_clear_outlined,
+                        size: 20,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '${zoneReports.length} reporte${zoneReports.length == 1 ? '' : 's'} en esta zona',
+                          'Límites territoriales aún no disponibles',
                           style: TextStyle(
                             fontSize: 14,
                             color: isDark ? Colors.white70 : Colors.black87,
@@ -1219,21 +1441,21 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
                 const SizedBox(height: 20),
 
-                // Cómo llegar al centro de la zona
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
-                      onPressed: () => _abrirGoogleMaps(
-                        coords['lat']!,
-                        coords['lng']!,
-                      ),
+                      onPressed: () =>
+                          _abrirGoogleMaps(point.latitude, point.longitude),
                       icon: const Icon(Icons.directions, size: 18),
                       label: const Text(
-                        'Cómo llegar',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        'Ver punto referencial',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2196F3),
@@ -1268,22 +1490,29 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     String distText = '';
     if (_userLat != null && _userLng != null) {
       final dist = LocationService.calculateDistance(
-        _userLat!, _userLng!, poiLat, poiLng,
+        _userLat!,
+        _userLng!,
+        poiLat,
+        poiLng,
       );
       distText = LocationService.formatDistance(dist);
     }
 
     final typeLabel = switch (type) {
       'comisaria' => 'Comisaria',
-      'puesto'    => 'Puesto Policial',
+      'puesto' => 'Puesto Policial',
       'serenazgo' => 'Serenazgo',
-      'colegio'   => 'Colegio',
-      'parque'    => 'Parque',
-      'mercado'   => 'Mercado',
-      'hospital'  => 'Hospital',
-      'postas'    => 'Centro de Salud',
-      'museo'     => 'Museo',
-      _           => 'Punto de interes',
+      'colegio' => 'Colegio',
+      'parque' => 'Parque',
+      'mercado' => 'Mercado',
+      'hospital' => 'Hospital',
+      'postas' => 'Centro de Salud',
+      'centro_salud' => 'Centro de Salud',
+      'museo' => 'Museo',
+      'grifo' => 'Grifo / EESS',
+      'equipamiento_social' => 'Equipamiento social',
+      'cementerio' => 'Cementerio',
+      _ => 'Punto de interes',
     };
 
     showModalBottomSheet(
@@ -1306,7 +1535,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 Center(
                   child: Container(
                     margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: Colors.grey.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
@@ -1316,7 +1546,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
                 // Icono grande del tipo
                 Container(
-                  width: 56, height: 56,
+                  width: 56,
+                  height: 56,
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
                     color: bgColor,
@@ -1392,7 +1623,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                       icon: const Icon(Icons.directions, size: 18),
                       label: const Text(
                         'Cómo llegar',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2196F3),
@@ -1448,7 +1682,9 @@ class _RiskMapScreenState extends State<RiskMapScreen>
           decoration: BoxDecoration(
             color: isEmergency
                 ? Colors.red.withValues(alpha: 0.08)
-                : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.withValues(alpha: 0.05)),
+                : (isDark
+                      ? Colors.white.withValues(alpha: 0.05)
+                      : Colors.grey.withValues(alpha: 0.05)),
             borderRadius: BorderRadius.circular(12),
             border: isEmergency
                 ? Border.all(color: Colors.red.withValues(alpha: 0.2))
@@ -1472,7 +1708,9 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     color: isEmergency
                         ? Colors.red.shade700
                         : (isDark ? Colors.white70 : Colors.black87),
-                    fontWeight: isEmergency ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isEmergency
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -1491,99 +1729,129 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
   IconData _iconForType(String type) {
     switch (type) {
-      case 'comisaria': return Icons.local_police;
-      case 'puesto': return Icons.security;
-      case 'serenazgo': return Icons.directions_walk;
-      case 'colegio': return Icons.school;
-      case 'parque': return Icons.park;
-      case 'mercado': return Icons.store;
-      case 'hospital': return Icons.local_hospital;
-      case 'postas': return Icons.medical_services;
-      case 'museo': return Icons.museum;
-      default: return Icons.location_on;
+      case 'comisaria':
+        return Icons.local_police;
+      case 'puesto':
+        return Icons.security;
+      case 'serenazgo':
+        return Icons.directions_walk;
+      case 'colegio':
+        return Icons.school;
+      case 'parque':
+        return Icons.park;
+      case 'mercado':
+        return Icons.store;
+      case 'hospital':
+        return Icons.local_hospital;
+      case 'postas':
+      case 'centro_salud':
+        return Icons.medical_services;
+      case 'museo':
+        return Icons.museum;
+      case 'grifo':
+        return Icons.local_gas_station;
+      case 'equipamiento_social':
+        return Icons.groups;
+      case 'cementerio':
+        return Icons.account_balance;
+      default:
+        return Icons.location_on;
     }
   }
 
   Color _colorForType(String type) {
     switch (type) {
-      case 'comisaria': return const Color(0xFF1565C0);
-      case 'puesto': return const Color(0xFF2E7D32);
-      case 'serenazgo': return const Color(0xFFE65100);
-      case 'colegio': return const Color(0xFF9C27B0);
-      case 'parque': return const Color(0xFF4CAF50);
-      case 'mercado': return const Color(0xFF795548);
-      case 'hospital': return const Color(0xFFE53935);
-      case 'postas': return const Color(0xFFF44336);
-      case 'museo': return const Color(0xFF8D6E63);
-      default: return Colors.blue;
+      case 'comisaria':
+        return const Color(0xFF1565C0);
+      case 'puesto':
+        return const Color(0xFF2E7D32);
+      case 'serenazgo':
+        return const Color(0xFFE65100);
+      case 'colegio':
+        return const Color(0xFF9C27B0);
+      case 'parque':
+        return const Color(0xFF4CAF50);
+      case 'mercado':
+        return const Color(0xFF795548);
+      case 'hospital':
+        return const Color(0xFFE53935);
+      case 'postas':
+      case 'centro_salud':
+        return const Color(0xFFF44336);
+      case 'museo':
+        return const Color(0xFF8D6E63);
+      case 'grifo':
+        return const Color(0xFF546E7A);
+      case 'equipamiento_social':
+        return const Color(0xFF00897B);
+      case 'cementerio':
+        return const Color(0xFF616161);
+      default:
+        return Colors.blue;
     }
   }
 
   /// Panel superior con datos de la zona actual del usuario.
   Widget _buildZoneInfoPanel(bool isDark) {
     final zone = _currentZone ?? 0;
-    final zoneName = LocationService.zoneName(zone);
+    final territorialZone = _territorialZoneForNumber(zone);
+    final zoneName = territorialZone?.name ?? 'Zona sin límites verificables';
 
     final zoneReports = _reports.where((r) {
       final z = r['zone_number'] ?? r['zone'];
       return z == zone;
     }).toList();
 
-    final riskLevels = zoneReports
-        .map((r) => (r['risk_level'] as String?) ?? 'baja')
+    final severityTags = zoneReports
+        .map((r) => (r['tag'] as String?) ?? 'verde')
         .toSet();
-    final hasCritical = riskLevels.contains('critica');
-    final hasHigh = riskLevels.contains('alta');
-    final hasMedium = riskLevels.contains('media');
+    final hasDanger = severityTags.contains('rojo');
+    final hasWarning = severityTags.contains('amarillo');
 
-    final Color riskColor;
-    final String riskLabel;
-    if (SosStateService().active) {
-      riskColor = AppTheme.sosRed;
-      riskLabel = 'S.O.S. ACTIVO';
-    } else if (hasCritical) {
-      riskColor = AppTheme.sosRed;
-      riskLabel = 'Crítico';
-    } else if (hasHigh) {
-      riskColor = const Color(0xFFFF6D00);
-      riskLabel = 'Alto';
-    } else if (hasMedium) {
-      riskColor = const Color(0xFFFFC107);
-      riskLabel = 'Medio';
+    final Color severityColor;
+    final String severityLabel;
+    if (_sosService.isActive) {
+      severityColor = AppTheme.sosRed;
+      severityLabel = 'S.O.S. ACTIVO';
+    } else if (hasDanger) {
+      severityColor = AppTheme.sosRed;
+      severityLabel = 'Peligro grave';
+    } else if (hasWarning) {
+      severityColor = const Color(0xFFFFC107);
+      severityLabel = 'Alerta preventiva';
     } else if (zoneReports.isNotEmpty) {
-      riskColor = Colors.greenAccent;
-      riskLabel = 'Bajo';
+      severityColor = Colors.greenAccent;
+      severityLabel = 'Informativa';
     } else {
-      riskColor = Colors.green;
-      riskLabel = 'Tranquila';
+      severityColor = Colors.green;
+      severityLabel = 'Sin alertas';
     }
-
-    final coords = LocationService.zoneCoordinates[zone];
 
     return Material(
       elevation: 6,
       borderRadius: BorderRadius.circular(16),
-      color: (isDark ? const Color(0xFF1E1E3E) : Colors.white)
-          .withValues(alpha: 0.95),
+      color: (isDark ? const Color(0xFF1E1E3E) : Colors.white).withValues(
+        alpha: 0.95,
+      ),
       child: InkWell(
-        onTap: coords != null
-            ? () => _mostrarInfoZona(zone, zoneName, coords)
+        onTap: territorialZone != null
+            ? () => _mostrarInfoZona(territorialZone)
             : null,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
-              // Indicador de riesgo (punto de color)
+              // Indicador de gravedad (punto de color)
               Container(
                 width: 12,
                 height: 12,
                 decoration: BoxDecoration(
-                  color: riskColor,
+                  color: severityColor,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: riskColor.withValues(alpha: 0.5),
+                      color: severityColor.withValues(alpha: 0.5),
                       blurRadius: 6,
                       spreadRadius: 1,
                     ),
@@ -1597,7 +1865,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Zona $zone · $zoneName',
+                      zoneName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1608,8 +1876,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${_reports.length} reportes activos · Riesgo $riskLabel'
-                      '${SosStateService().active ? ' 🚨' : ''}'
+                      '${_reports.length} reportes activos · $severityLabel'
+                      '${_sosService.isActive ? ' 🚨' : ''}'
                       '${_usingFallbackTiles ? ' · Mapas OSM' : ''}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1621,11 +1889,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: Colors.grey,
-              ),
+              const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
             ],
           ),
         ),
@@ -1652,7 +1916,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 ),
                 child: Text(
                   'Z${_currentZone!}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -1686,526 +1953,634 @@ class _RiskMapScreenState extends State<RiskMapScreen>
               child: Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '${_reports.length} reportes',
-                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
             ),
         ],
       ),
-      body: Stack(
-        children: [
-          // === MAPA PRINCIPAL ===
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: MapConfig.colliqueCenter,
-              initialZoom: 14.5,
-              // Rango de zoom amplio: permite alejarse para ver todo
-              // Collique y sus alrededores, y acercarse mucho para leer
-              // calles y detalles (MapTiler soporta hasta nivel 22).
-              // InteractiveFlag.all habilita el zoom con los dedos (pinch),
-              // doble toque, arrastre y rotación.
-              minZoom: 11.0,
-              maxZoom: 21.0,
-              backgroundColor: const Color(0xFFE8ECEF),
-              cameraConstraint: MapConfig.colliqueConstraint,
-              interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: _currentTileUrl,
-                userAgentPackageName: 'com.safezone.app',
-                // ============================================================
-                // RESPALDO AUTOMÁTICO DE TILES
-                // ============================================================
-                // Si un tile del proveedor principal (MapTiler) falla al
-                // cargar, cambiamos inmediatamente a OpenStreetMap para que
-                // el mapa nunca se quede en blanco.
-                errorTileCallback: (tile, error, stackTrace) {
-                  _switchToFallbackTiles();
-                },
-                evictErrorTileStrategy: EvictErrorTileStrategy.notVisible,
-              ),
-
-              // Atribución requerida (MapTiler / OpenStreetMap)
-              SimpleAttributionWidget(
-                source: Text(
-                  MapConfig.attribution,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+      body: _isTerritoryLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _territoryLoadError != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.map_outlined, size: 42),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No se pudo cargar la información territorial.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _territoryLoadError = null;
+                          _isTerritoryLoading = true;
+                        });
+                        _loadTerritorialZones();
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
                 ),
               ),
-
-              // Marcadores agrupados con clustering
-              MarkerClusterLayerWidget(
-                options: MarkerClusterLayerOptions(
-                  maxClusterRadius: 60,
-                  size: const Size(40, 40),
-                  markers: _construirMarcadores(),
-                  polygonOptions: const PolygonOptions(
-                    borderColor: Colors.transparent,
-                    color: Colors.transparent,
+            )
+          : Stack(
+              children: [
+                // === MAPA PRINCIPAL ===
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCameraFit: _initialTerritoryCameraFit!,
+                    // Rango de zoom amplio: permite alejarse para ver todo
+                    // Collique y sus alrededores, y acercarse mucho para leer
+                    // calles y detalles (MapTiler soporta hasta nivel 22).
+                    // InteractiveFlag.all habilita el zoom con los dedos (pinch),
+                    // doble toque, arrastre y rotación.
+                    minZoom: 11.0,
+                    maxZoom: 21.0,
+                    backgroundColor: const Color(0xFFE8ECEF),
+                    cameraConstraint: RiskMapCameraConfig.cameraConstraint,
+                    onMapReady: _onMapReady,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.all,
+                    ),
                   ),
-                  builder: (context, markers) {
-                    // Tamaño del cluster según cantidad (estilo Google Maps)
-                    final count = markers.length;
-                    final size = count >= 10 ? 48.0 : 40.0;
-                    return Container(
-                      width: size,
-                      height: size,
-                      decoration: BoxDecoration(
-                        color: count >= 10
-                            ? AppTheme.brandRedBright
-                            : AppTheme.primaryGreen,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          count.toString(),
-                          style: TextStyle(
-                            fontSize: count >= 10 ? 14 : 13,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: _currentTileUrl,
+                      userAgentPackageName: 'com.safezone.app',
+                      // ============================================================
+                      // RESPALDO AUTOMÁTICO DE TILES
+                      // ============================================================
+                      // Si un tile del proveedor principal (MapTiler) falla al
+                      // cargar, cambiamos inmediatamente a OpenStreetMap para que
+                      // el mapa nunca se quede en blanco.
+                      errorTileCallback: (tile, error, stackTrace) {
+                        _switchToFallbackTiles();
+                      },
+                      evictErrorTileStrategy: EvictErrorTileStrategy.notVisible,
+                    ),
 
-              // Zonas de Collique (1-14) - etiquetas con nombre
-              MarkerLayer(
-                markers: List.generate(14, (i) {
-                  final coords = LocationService.zoneCoordinates[i + 1];
-                  if (coords == null) {
-                    return Marker(
-                      point: const LatLng(0, 0),
-                      width: 0, height: 0,
-                      child: const SizedBox.shrink(),
-                    );
-                  }
-                  final zoneNum = i + 1;
-                  final zoneName = LocationService.zoneName(zoneNum);
-                  return Marker(
-                    point: LatLng(coords['lat']!, coords['lng']!),
-                    width: 58,
-                    height: 34,
-                    child: GestureDetector(
-                      onTap: () => _mostrarInfoZona(zoneNum, zoneName, coords),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: (isDark ? Colors.white : Colors.black)
-                              .withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _zoneColors[zoneNum - 1].withValues(alpha: 0.8),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Text(
-                          'Z$zoneNum',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
+                    // Atribución requerida (MapTiler / OpenStreetMap)
+                    SimpleAttributionWidget(
+                      source: Text(
+                        MapConfig.attribution,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
                         ),
                       ),
                     ),
-                  );
-                }),
-              ),
 
-              // === MARCADOR DE UBICACION DEL USUARIO ===
-              // Color según el riesgo de la zona y parpadeo durante S.O.S.
-              if (_userLat != null && _userLng != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: LatLng(_userLat!, _userLng!),
-                      width: 44,
-                      height: 44,
-                      child: GestureDetector(
-                        onTap: () {
-                          final zoneText = _currentZone != null
-                              ? 'Estas en Zona $_currentZone (${LocationService.zoneName(_currentZone!)})'
-                              : 'Estas aqui';
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  const Icon(Icons.person_pin, color: Colors.white, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(child: Text(zoneText)),
-                                ],
+                    // Marcadores agrupados con clustering
+                    MarkerClusterLayerWidget(
+                      options: MarkerClusterLayerOptions(
+                        maxClusterRadius: 60,
+                        size: const Size(40, 40),
+                        markers: _construirMarcadores(),
+                        polygonOptions: const PolygonOptions(
+                          borderColor: Colors.transparent,
+                          color: Colors.transparent,
+                        ),
+                        builder: (context, markers) {
+                          // Tamaño del cluster según cantidad (estilo Google Maps)
+                          final count = markers.length;
+                          final size = count >= 10 ? 48.0 : 40.0;
+                          return Container(
+                            width: size,
+                            height: size,
+                            decoration: BoxDecoration(
+                              color: count >= 10
+                                  ? AppTheme.brandRedBright
+                                  : AppTheme.primaryGreen,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2.5,
                               ),
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.25),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                count.toString(),
+                                style: TextStyle(
+                                  fontSize: count >= 10 ? 14 : 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
                           );
                         },
-                        child: AnimatedBuilder(
-                          animation: _userPulseController,
-                          builder: (context, child) {
-                            final dotColor = _userDotColor();
-                            final sosActive = SosStateService().active;
+                      ),
+                    ),
 
-                            // Anillo de pulso permanente (estilo Google Maps)
-                            final pulseRing = Container(
-                              width: 40 * _userPulseScale.value,
-                              height: 40 * _userPulseScale.value,
-                              decoration: BoxDecoration(
-                                color: dotColor.withValues(
-                                  alpha: 0.25 * _userPulseOpacity.value,
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                            );
-
-                            // Punto principal
-                            final dot = Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: dotColor,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: dotColor.withValues(alpha: 0.6),
-                                    blurRadius: 12,
-                                    spreadRadius: 2,
+                    // Zonas I–VI: puntos referenciales, nunca áreas o centroides.
+                    MarkerLayer(
+                      markers: _verifiedTerritorialZones
+                          .map((zone) {
+                            final point = zone.referencePoint!;
+                            return Marker(
+                              point: point,
+                              width: 82,
+                              height: 34,
+                              child: GestureDetector(
+                                onTap: () => _mostrarInfoZona(zone),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
                                   ),
-                                ],
-                              ),
-                              child: Icon(
-                                sosActive
-                                    ? Icons.sos
-                                    : Icons.person_pin_circle,
-                                color: Colors.white,
-                                size: 24,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        (isDark ? Colors.white : Colors.black)
+                                            .withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: _zoneColors[zone.zoneNumber - 1]
+                                          .withValues(alpha: 0.8),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    zone.displayLabel,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
                               ),
                             );
+                          })
+                          .toList(growable: false),
+                    ),
 
-                            return AnimatedBuilder(
-                              animation: _sosBlinkController,
-                              builder: (context, child) {
-                                // Durante S.O.S.: el punto parpadea y el anillo
-                                // rojo pulsante sustituye al anillo verde.
-                                if (sosActive) {
-                                  return Opacity(
-                                    opacity: _sosBlinkOpacity.value,
-                                    child: Stack(
-                                      alignment: Alignment.center,
+                    // S.O.S. de otros usuarios: capa efímera y diferenciada.
+                    // Los reportes S.O.S. no entran al cluster para evitar
+                    // duplicar o disfrazar una emergencia como un reporte común.
+                    if (_sosRealtimeService.activeAlerts.value.isNotEmpty)
+                      MarkerLayer(markers: _buildRemoteSosMarkers()),
+
+                    // === MARCADOR DE UBICACION DEL USUARIO ===
+                    // Color según el riesgo de la zona y parpadeo durante S.O.S.
+                    if (_displayUserLat != null && _displayUserLng != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(_displayUserLat!, _displayUserLng!),
+                            width: 44,
+                            height: 44,
+                            child: GestureDetector(
+                              onTap: () {
+                                final zoneText = _currentZone != null
+                                    ? 'Estas en Zona $_currentZone (${LocationService.zoneName(_currentZone!)})'
+                                    : 'Estas aqui';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
                                       children: [
-                                        Container(
-                                          width: 40 * (1.3 + _sosBlinkOpacity.value * 0.5),
-                                          height: 40 * (1.3 + _sosBlinkOpacity.value * 0.5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red.withValues(
-                                              alpha: 0.35 * _sosBlinkOpacity.value,
-                                            ),
-                                            shape: BoxShape.circle,
-                                          ),
+                                        const Icon(
+                                          Icons.person_pin,
+                                          color: Colors.white,
+                                          size: 20,
                                         ),
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            color: dotColor,
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width: 3,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: dotColor.withValues(alpha: 0.6),
-                                                blurRadius: 12,
-                                                spreadRadius: 2,
-                                              ),
-                                            ],
+                                        const SizedBox(width: 8),
+                                        Expanded(child: Text(zoneText)),
+                                      ],
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              },
+                              child: AnimatedBuilder(
+                                animation: _userPulseController,
+                                builder: (context, child) {
+                                  final dotColor = _userDotColor();
+                                  final sosActive = _sosService.isActive;
+
+                                  // Anillo de pulso permanente (estilo Google Maps)
+                                  final pulseRing = Container(
+                                    width: 40 * _userPulseScale.value,
+                                    height: 40 * _userPulseScale.value,
+                                    decoration: BoxDecoration(
+                                      color: dotColor.withValues(
+                                        alpha: 0.25 * _userPulseOpacity.value,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  );
+
+                                  // Punto principal
+                                  final dot = Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: dotColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 3,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: dotColor.withValues(
+                                            alpha: 0.6,
                                           ),
-                                          child: const Icon(
-                                            Icons.sos,
-                                            color: Colors.white,
-                                            size: 24,
-                                          ),
+                                          blurRadius: 12,
+                                          spreadRadius: 2,
                                         ),
                                       ],
                                     ),
+                                    child: Icon(
+                                      sosActive
+                                          ? Icons.sos
+                                          : Icons.person_pin_circle,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
                                   );
-                                }
 
-                                // Normal: anillo de pulso verde/color de riesgo
-                                return Stack(
-                                  alignment: Alignment.center,
-                                  children: [pulseRing, dot],
-                                );
-                              },
-                            );
-                          },
-                        ),
+                                  return AnimatedBuilder(
+                                    animation: _sosBlinkController,
+                                    builder: (context, child) {
+                                      // Durante S.O.S.: el punto parpadea y el anillo
+                                      // rojo pulsante sustituye al anillo verde.
+                                      if (sosActive) {
+                                        return Opacity(
+                                          opacity: _sosBlinkOpacity.value,
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              Container(
+                                                width:
+                                                    40 *
+                                                    (1.3 +
+                                                        _sosBlinkOpacity.value *
+                                                            0.5),
+                                                height:
+                                                    40 *
+                                                    (1.3 +
+                                                        _sosBlinkOpacity.value *
+                                                            0.5),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red.withValues(
+                                                    alpha:
+                                                        0.35 *
+                                                        _sosBlinkOpacity.value,
+                                                  ),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              Container(
+                                                width: 40,
+                                                height: 40,
+                                                decoration: BoxDecoration(
+                                                  color: dotColor,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 3,
+                                                  ),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: dotColor
+                                                          .withValues(
+                                                            alpha: 0.6,
+                                                          ),
+                                                      blurRadius: 12,
+                                                      spreadRadius: 2,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: const Icon(
+                                                  Icons.sos,
+                                                  color: Colors.white,
+                                                  size: 24,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }
+
+                                      // Normal: anillo de pulso verde/color de riesgo
+                                      return Stack(
+                                        alignment: Alignment.center,
+                                        children: [pulseRing, dot],
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                    // POI: la única entrada de render es el catálogo VERIFIED.
+                    MarkerLayer(markers: _construirMarcadoresPoi()),
+                  ],
+                ),
+
+                // === LEYENDA DE CATEGORIAS ===
+                Positioned(
+                  left: 12,
+                  bottom: 80,
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Categorías',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _LegendItem(
+                            color: const Color(0xFFFF0000),
+                            label: 'Robo',
+                          ),
+                          _LegendItem(color: AppTheme.sosRed, label: 'S.O.S.'),
+                          _LegendItem(
+                            color: const Color(0xFFFFA500),
+                            label: 'Sospechoso',
+                          ),
+                          _LegendItem(
+                            color: const Color(0xFFFFFF00),
+                            label: 'Alumbrado',
+                          ),
+                          _LegendItem(color: Colors.grey, label: 'Otros'),
+                          const Divider(height: 8),
+                          _LegendItem(
+                            color: AppTheme.primaryGreen,
+                            label: 'Cluster',
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-
-              // === POLIGONOS DE ZONAS ===
-              PolygonLayer(
-                polygons: List.generate(14, (i) {
-                  final zoneNum = i + 1;
-                  final vertices = LocationService.zonePolygons[zoneNum];
-                  if (vertices == null || vertices.length < 3) return null;
-
-                  final color = _zoneColors[i];
-
-                  return Polygon(
-                    points: vertices.map((v) => LatLng(v['lat']!, v['lng']!)).toList(),
-                    color: color.withValues(alpha: 0.08),
-                    borderColor: color.withValues(alpha: 0.35),
-                    borderStrokeWidth: 1.5,
-                  );
-                }).whereType<Polygon>().toList(),
-              ),
-
-              // === PUNTOS DE INTERES (POIs) - NUEVOS ===
-              // Colegios
-              MarkerLayer(markers: _construirMarcadoresColegios()),
-              // Parques
-              MarkerLayer(markers: _construirMarcadoresParques()),
-              // Mercados
-              MarkerLayer(markers: _construirMarcadoresMercados()),
-              // Centros de salud
-              MarkerLayer(markers: _construirMarcadoresSalud()),
-              // Comisarias y puestos
-              MarkerLayer(markers: _filtrarComisariasCercanas()),
-              // Museo de los Colli (individual; el Hospital Sergio Bernales ya
-              // se muestra desde los centros de salud con su ubicación real)
-              MarkerLayer(
-                markers: [
-                  _buildPoiMarker(
-                    lat: -11.9114, lng: -77.0261,
-                    poiData: {'name': 'Museo de los Colli', 'type': 'museo'},
                   ),
-                ],
-              ),
-            ],
-          ),
-
-          // === LEYENDA DE CATEGORIAS ===
-          Positioned(
-            left: 12,
-            bottom: 80,
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Categorías', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    _LegendItem(color: const Color(0xFFFF0000), label: 'Robo'),
-                    _LegendItem(color: AppTheme.sosRed, label: 'S.O.S.'),
-                    _LegendItem(color: const Color(0xFFFFA500), label: 'Sospechoso'),
-                    _LegendItem(color: const Color(0xFFFFFF00), label: 'Alumbrado'),
-                    _LegendItem(color: Colors.grey, label: 'Otros'),
-                    const Divider(height: 8),
-                    _LegendItem(color: AppTheme.primaryGreen, label: 'Cluster'),
-                  ],
                 ),
-              ),
-            ),
-          ),
 
-          // === LEYENDA DE ANTIGÜEDAD ===
-          Positioned(
-            left: 12,
-            bottom: 210,
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Antigüedad', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    _LegendItem(
-                      color: const Color(0xFFFF0000),
-                      label: '0-12 h (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFF0000)).length})',
+                // === LEYENDA DE ANTIGÜEDAD ===
+                Positioned(
+                  left: 12,
+                  bottom: 210,
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    _LegendItem(
-                      color: const Color(0xFFFFA500),
-                      label: '12h-2d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFA500)).length})',
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Antigüedad',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _LegendItem(
+                            color: const Color(0xFFFF0000),
+                            label:
+                                '0-12 h (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFF0000)).length})',
+                          ),
+                          _LegendItem(
+                            color: const Color(0xFFFFA500),
+                            label:
+                                '12h-2d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFA500)).length})',
+                          ),
+                          _LegendItem(
+                            color: const Color(0xFFFFFF00),
+                            label:
+                                '2-6 d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFFF00)).length})',
+                          ),
+                          _LegendItem(
+                            color: const Color(0xFF0000FF),
+                            label:
+                                '7 d+ (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFF0000FF)).length})',
+                          ),
+                        ],
+                      ),
                     ),
-                    _LegendItem(
-                      color: const Color(0xFFFFFF00),
-                      label: '2-6 d (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFFFFFF00)).length})',
-                    ),
-                    _LegendItem(
-                      color: const Color(0xFF0000FF),
-                      label: '7 d+ (${_reports.where((r) => _colorPorAntiguedad(r['created_at'] as String?) == const Color(0xFF0000FF)).length})',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-
-          // === BOTON ZONA SEGURA ===
-          Positioned(
-            left: 16,
-            bottom: 365,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'safe_checkin',
-                  onPressed: _isCheckingIn ? null : _doSafeCheckin,
-                  backgroundColor: const Color(0xFF4CAF50).withValues(alpha: 0.85),
-                  child: _isCheckingIn
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.check_circle_outline, color: Colors.white, size: 22),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'Zona segura',
-                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
                 ),
-              ],
-            ),
-          ),
 
-          // === BOTON MI UBICACION ===
-          Positioned(
-            right: 16,
-            bottom: 120,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'recenter',
-                  onPressed: _isLocatingUser ? null : _recenterMap,
-                  backgroundColor: (_userLat != null
-                          ? const Color(0xFF2196F3)
-                          : (isDark ? Colors.white : Colors.black))
-                      .withValues(alpha: 0.75),
-                  child: _isLocatingUser
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Icon(
-                          _userLat != null ? Icons.my_location : Icons.location_searching,
-                          color: isDark ? Colors.black87 : Colors.white,
-                          size: 20,
-                        ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _userLat != null ? 'Mi ubicacion' : 'Centrar',
-                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: isDark ? Colors.black87 : Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // === PANEL DE DATOS DE LA ZONA ACTUAL ===
-          // Muestra la zona donde está el usuario, su nombre, la cantidad
-          // de reportes activos y el nivel de riesgo (toque para ver detalle).
-          if (_currentZone != null)
-            Positioned(
-              top: 8,
-              left: 12,
-              right: 12,
-              child: _buildZoneInfoPanel(isDark),
-            ),
-
-          // === CARGA INICIAL ===
-          if (_isLoading)
-            Container(
-              color: Colors.black.withValues(alpha: 0.2),
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-
-          // === BANNER DE ERROR ===
-          if (_streamError && _reports.isEmpty)
-            Positioned(
-              top: 8,
-              left: 12,
-              right: 12,
-              child: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(12),
-                color: Colors.orange.shade50,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Row(
+                // === BOTON ZONA SEGURA ===
+                Positioned(
+                  left: 16,
+                  bottom: 365,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.cloud_off, size: 18, color: Colors.orange.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Sin conexión. Los reportes aparecerán cuando haya conexión.',
-                          style: TextStyle(fontSize: 12, color: Colors.orange.shade800, height: 1.3),
+                      FloatingActionButton.small(
+                        heroTag: 'safe_checkin',
+                        onPressed: _isCheckingIn ? null : _doSafeCheckin,
+                        backgroundColor: const Color(
+                          0xFF4CAF50,
+                        ).withValues(alpha: 0.85),
+                        child: _isCheckingIn
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.check_circle_outline,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Zona segura',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
+
+                // === BOTON MI UBICACION ===
+                Positioned(
+                  right: 16,
+                  bottom: 120,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: 'recenter',
+                        onPressed: _isLocatingUser ? null : _recenterMap,
+                        backgroundColor:
+                            (_userLat != null
+                                    ? const Color(0xFF2196F3)
+                                    : (isDark ? Colors.white : Colors.black))
+                                .withValues(alpha: 0.75),
+                        child: _isLocatingUser
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                _userLat != null
+                                    ? Icons.my_location
+                                    : Icons.location_searching,
+                                color: isDark ? Colors.black87 : Colors.white,
+                                size: 20,
+                              ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _userLat != null ? 'Mi ubicacion' : 'Centrar',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.black87 : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // === PANEL DE DATOS DE LA ZONA ACTUAL ===
+                // Muestra la zona donde está el usuario, su nombre, la cantidad
+                // de reportes activos y su gravedad (toque para ver detalle).
+                if (_currentZone != null)
+                  Positioned(
+                    top: 8,
+                    left: 12,
+                    right: 12,
+                    child: _buildZoneInfoPanel(isDark),
+                  ),
+
+                // === CARGA INICIAL ===
+                if (_isLoading)
+                  Container(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    child: const Center(child: CircularProgressIndicator()),
+                  ),
+
+                // === BANNER DE ERROR ===
+                if (_streamError && _reports.isEmpty)
+                  Positioned(
+                    top: 8,
+                    left: 12,
+                    right: 12,
+                    child: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.orange.shade50,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.cloud_off,
+                              size: 18,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Sin conexión. Los reportes aparecerán cuando haya conexión.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange.shade800,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 }
@@ -2344,7 +2719,8 @@ class _LegendItem extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 10, height: 10,
+            width: 10,
+            height: 10,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),

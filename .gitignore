@@ -38,6 +38,7 @@ nul
 .pub/
 /build/
 /coverage/
+/release/*.apk
 
 # Symbolication related
 app.*.symbols

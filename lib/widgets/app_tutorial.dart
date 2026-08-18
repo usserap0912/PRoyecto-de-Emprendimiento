@@ -39,7 +39,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.shield_rounded,
     title: '¡Bienvenido, Guardián!',
-    subtitle: 'Has entrado a SafeZone, la red vecinal que protege Collique. Descubre cómo puedes ayudar a tu comunidad.',
+    subtitle:
+        'Has entrado a SafeZone, la red vecinal que protege Collique. Descubre cómo puedes ayudar a tu comunidad.',
     color1: Color(0xFFC3110C),
     color2: Color(0xFF740A03),
     emoji: '🦸',
@@ -47,7 +48,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.newspaper,
     title: 'Muro Vecinal',
-    subtitle: 'Aquí ves todos los reportes de tus vecinos en tiempo real. Puedes reaccionar con 🛡️⚠️ y comentar para apoyar.',
+    subtitle:
+        'Aquí ves todos los reportes de tus vecinos en tiempo real. Puedes reaccionar con 🛡️⚠️ y comentar para apoyar.',
     color1: Color(0xFF1565C0),
     color2: Color(0xFF0D47A1),
     emoji: '📰',
@@ -55,7 +57,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.map,
     title: 'Mapa de Riesgo',
-    subtitle: 'Visualiza incidentes cerca de ti. Los colores te indican el tipo: 🔴 Robo, 🟠 Sospechoso, 🟡 Alumbrado.',
+    subtitle:
+        'Visualiza incidentes cerca de ti. Los colores te indican el tipo: 🔴 Robo, 🟠 Sospechoso, 🟡 Alumbrado.',
     color1: Color(0xFF2E7D32),
     color2: Color(0xFF1B5E20),
     emoji: '🗺️',
@@ -63,7 +66,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.sos,
     title: 'Alerta S.O.S.',
-    subtitle: '¿Emergencia? Presiona el botón rojo 3 segundos. Envía tu ubicación GPS a todos los vecinos al instante.',
+    subtitle:
+        '¿Emergencia? Activa el botón rojo. Comparte una ubicación aproximada durante 60 segundos con vecinos conectados.',
     color1: Color(0xFFD32F2F),
     color2: Color(0xFFB71C1C),
     emoji: '🚨',
@@ -71,7 +75,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.add_circle,
     title: 'Reporta con Evidencia',
-    subtitle: 'Toma foto o video de cualquier incidente. Elige categoría, nivel de riesgo y ayuda a mantenerte alerta.',
+    subtitle:
+        'Toma foto o video de cualquier incidente. Elige categoría y nivel de gravedad para mantener informada a la comunidad.',
     color1: Color(0xFFE65100),
     color2: Color(0xFFBF360C),
     emoji: '📸',
@@ -79,7 +84,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.chat,
     title: 'Chat Vecinal',
-    subtitle: 'Conversa con tus vecinos de forma anónima. Coordina rondas, comparte información y fortalece la comunidad.',
+    subtitle:
+        'Conversa con tus vecinos de forma anónima. Coordina rondas, comparte información y fortalece la comunidad.',
     color1: Color(0xFF7B1FA2),
     color2: Color(0xFF4A148C),
     emoji: '💬',
@@ -87,7 +93,8 @@ const List<_TutorialStep> _steps = [
   _TutorialStep(
     icon: Icons.shield_rounded,
     title: '¡Zona Segura Activada!',
-    subtitle: 'Recuerda: ZoneBot siempre está disponible. Solo toca el globo flotante para hablar con tu asistente IA.',
+    subtitle:
+        'Recuerda: ZoneBot siempre está disponible. Solo toca el globo flotante para hablar con tu asistente IA.',
     color1: AppTheme.primaryGreen,
     color2: AppTheme.brandRedBright,
     emoji: '🎉',
@@ -249,7 +256,9 @@ class _AppTutorialState extends State<AppTutorial>
                           onTap: _skipTutorial,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(20),
@@ -279,13 +288,14 @@ class _AppTutorialState extends State<AppTutorial>
                               color: isActive
                                   ? Colors.white
                                   : isPast
-                                      ? Colors.white.withValues(alpha: 0.5)
-                                      : Colors.white.withValues(alpha: 0.2),
+                                  ? Colors.white.withValues(alpha: 0.5)
+                                  : Colors.white.withValues(alpha: 0.2),
                               boxShadow: isActive
                                   ? [
                                       BoxShadow(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.4),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.4,
+                                        ),
                                         blurRadius: 8,
                                         spreadRadius: 1,
                                       ),
@@ -307,8 +317,7 @@ class _AppTutorialState extends State<AppTutorial>
                       return Opacity(
                         opacity: _slideAnimation.value,
                         child: Transform.translate(
-                          offset: Offset(
-                              0, 30 * (1 - _slideAnimation.value)),
+                          offset: Offset(0, 30 * (1 - _slideAnimation.value)),
                           child: _buildStepContent(),
                         ),
                       );
@@ -338,7 +347,9 @@ class _AppTutorialState extends State<AppTutorial>
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 elevation: 8,
-                                shadowColor: Colors.white.withValues(alpha: 0.3),
+                                shadowColor: Colors.white.withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -355,12 +366,16 @@ class _AppTutorialState extends State<AppTutorial>
                                   ),
                                   if (_currentStep < _steps.length - 1) ...[
                                     const SizedBox(width: 8),
-                                    const Icon(Icons.arrow_forward_rounded,
-                                        size: 20),
+                                    const Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 20,
+                                    ),
                                   ] else ...[
                                     const SizedBox(width: 8),
-                                    const Icon(Icons.celebration_outlined,
-                                        size: 20),
+                                    const Icon(
+                                      Icons.celebration_outlined,
+                                      size: 20,
+                                    ),
                                   ],
                                 ],
                               ),
@@ -432,11 +447,7 @@ class _AppTutorialState extends State<AppTutorial>
                   },
                 ),
                 // Icono grande
-                Icon(
-                  step.icon,
-                  size: 56,
-                  color: Colors.white,
-                ),
+                Icon(step.icon, size: 56, color: Colors.white),
               ],
             ),
           ),
@@ -452,10 +463,7 @@ class _AppTutorialState extends State<AppTutorial>
                   0,
                   -4 * math.sin(_pulseController.value * math.pi * 2),
                 ),
-                child: Text(
-                  step.emoji,
-                  style: const TextStyle(fontSize: 36),
-                ),
+                child: Text(step.emoji, style: const TextStyle(fontSize: 36)),
               );
             },
           ),
@@ -489,9 +497,7 @@ class _AppTutorialState extends State<AppTutorial>
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Text(
               step.subtitle,
@@ -536,10 +542,7 @@ class _TutorialParticlePainter extends CustomPainter {
   final double progress;
   final Color color;
 
-  _TutorialParticlePainter({
-    required this.progress,
-    required this.color,
-  });
+  _TutorialParticlePainter({required this.progress, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -550,7 +553,8 @@ class _TutorialParticlePainter extends CustomPainter {
     // 8 círculos decorativos que flotan lentamente
     for (int i = 0; i < 8; i++) {
       final angle = (i / 8) * math.pi * 2 + progress * math.pi * 0.3;
-      final radius = size.width * 0.35 +
+      final radius =
+          size.width * 0.35 +
           math.sin(progress * math.pi * 2 + i) * size.width * 0.05;
       final cx = size.width / 2 + math.cos(angle) * radius;
       final cy = size.height / 2 + math.sin(angle) * radius * 0.6;

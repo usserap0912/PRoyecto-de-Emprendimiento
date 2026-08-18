@@ -1,0 +1,96 @@
+{
+  "type": "FeatureCollection",
+  "name": "collique_zones_without_verified_geometry",
+  "metadata": {
+    "description": "Evidencia territorial de las zonas VII–X sin punto, centroide ni límites verificados. No se renderiza en el mapa.",
+    "coordinateOrder": "longitude_latitude",
+    "crs": "EPSG:4326",
+    "reviewedAt": "2026-08-17"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "collique-zone-vii-recognized",
+      "properties": {
+        "id": "collique-zone-vii-recognized",
+        "zoneNumber": 7,
+        "displayLabel": "ZONA VII",
+        "name": "Collique - Zona VII",
+        "nameVariants": ["VII Zona de Collique", "Séptima Zona de Collique", "7ma Zona de Collique"],
+        "divisionType": "zona_de_collique_without_verified_geometry",
+        "geometryRole": "not_available",
+        "boundaryStatus": "not_available",
+        "verificationStatus": "recognized_without_geometry",
+        "confidence": "medium",
+        "sourceRefs": ["cofopri-contingencias-comas-2018", "municomas-ord-722-2026", "minedu-semillitas-vii"],
+        "productionVisible": false,
+        "selectionVisible": true,
+        "verifiedAt": null
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-viii-recognized",
+      "properties": {
+        "id": "collique-zone-viii-recognized",
+        "zoneNumber": 8,
+        "displayLabel": "ZONA VIII",
+        "name": "Collique - Zona VIII",
+        "nameVariants": ["VIII Zona de Collique", "Octava Zona de Collique", "8va Zona de Collique"],
+        "divisionType": "zona_de_collique_without_verified_geometry",
+        "geometryRole": "not_available",
+        "boundaryStatus": "not_available",
+        "verificationStatus": "recognized_without_geometry",
+        "confidence": "medium",
+        "sourceRefs": ["indeci-ayabaca-viii-2023", "ugel-pronoei-viii-2021"],
+        "productionVisible": false,
+        "selectionVisible": true,
+        "verifiedAt": null
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-ix-recognized",
+      "properties": {
+        "id": "collique-zone-ix-recognized",
+        "zoneNumber": 9,
+        "displayLabel": "ZONA IX",
+        "name": "Collique - Zona IX",
+        "nameVariants": ["IX Zona de Collique", "Novena Zona de Collique", "9na Zona de Collique"],
+        "divisionType": "zona_de_collique_without_verified_geometry",
+        "geometryRole": "not_available",
+        "boundaryStatus": "not_available",
+        "verificationStatus": "recognized_without_geometry",
+        "confidence": "medium_low",
+        "sourceRefs": ["municomas-novena-2023", "mpfn-novena-2021"],
+        "productionVisible": false,
+        "selectionVisible": true,
+        "verifiedAt": null
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "collique-zone-x-historical-reference",
+      "properties": {
+        "id": "collique-zone-x-historical-reference",
+        "zoneNumber": 10,
+        "displayLabel": "ZONA X",
+        "name": "Collique - Zona X",
+        "nameVariants": ["X Zona de Collique", "Décima Zona de Collique", "10ma Zona de Collique"],
+        "divisionType": "zona_de_collique_historical_reference",
+        "geometryRole": "not_available",
+        "boundaryStatus": "not_available",
+        "verificationStatus": "historical_reference_without_geometry",
+        "confidence": "low",
+        "sourceRefs": ["minsa-decima-2014"],
+        "productionVisible": false,
+        "selectionVisible": true,
+        "verifiedAt": null
+      },
+      "geometry": null
+    }
+  ]
+}

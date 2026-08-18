@@ -1,10 +1,11 @@
-import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:safezone/services/location_service.dart';
+import 'package:safezone/models/sos_session.dart';
+import 'package:image_picker/image_picker.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -18,7 +19,8 @@ class SupabaseService {
   static Future<void> initialize() async {
     await Supabase.initialize(
       url: 'https://kpkdgejbjgmrbyemubmx.supabase.co',
-      publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwa2RnZWpiamdtcmJ5ZW11Ym14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2NjI5NTUsImV4cCI6MjA5NTIzODk1NX0.IRncOSBz7ALzvsazsQ4a1M3LaykBQ6Hsqd8GuE3LQf8',
+      publishableKey:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtwa2RnZWpiamdtcmJ5ZW11Ym14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2NjI5NTUsImV4cCI6MjA5NTIzODk1NX0.IRncOSBz7ALzvsazsQ4a1M3LaykBQ6Hsqd8GuE3LQf8',
     );
   }
 
@@ -48,50 +50,61 @@ class SupabaseService {
     }
   }
 
-  /// Crea un nuevo perfil anónimo. Retorna true si tuvo éxito.
+  /// Crea el perfil pseudónimo usando el esquema legado actualmente activo.
   Future<bool> createProfile(Map<String, dynamic> profile) async {
     try {
       await client.from(profilesTable).insert(profile);
       return true;
-    } catch (e) {
-      debugPrint('SupabaseService.createProfile error: $e');
+    } on PostgrestException catch (error) {
+      // El perfil ya existe: conservar el mismo User-XXXX es correcto.
+      if (error.code == '23505') return true;
+      debugPrint(
+        '[ENTRY] legacy_profile_insert_failed [${error.code ?? 'unknown'}]',
+      );
+      return false;
+    } catch (error) {
+      debugPrint('[ENTRY] legacy_profile_insert_failed [${error.runtimeType}]');
       return false;
     }
+  }
+
+  Future<bool> ensureLegacyProfile({
+    required String userCode,
+    required int zone,
+  }) async {
+    final existing = await getProfileByCode(userCode);
+    if (existing != null) return true;
+    return createProfile({'user_code': userCode, 'zone': zone});
   }
 
   // ============================================================
   // REPORTES - REACCIONES
   // ============================================================
 
-  /// Registra una reacción de un usuario a un reporte. 
+  /// Registra una reacción de un usuario a un reporte.
   /// Si ya existe esa reacción, la elimina (toggle).
   Future<void> toggleReaction(
-      String reportId, String userCode, String reactionType) async {
+    String reportId,
+    String userCode,
+    String reactionType,
+  ) async {
     try {
-      // Verificar si ya existe la reacción
       final existing = await client
           .from(reactionsTable)
-          .select()
+          .select('id')
           .eq('report_id', reportId)
           .eq('user_code', userCode)
           .eq('reaction_type', reactionType)
           .maybeSingle();
 
-      if (existing != null) {
-        // Ya existe → eliminar (toggle off)
-        await client
-            .from(reactionsTable)
-            .delete()
-            .eq('report_id', reportId)
-            .eq('user_code', userCode)
-            .eq('reaction_type', reactionType);
-      } else {
-        // No existe → insertar (toggle on)
+      if (existing == null) {
         await client.from(reactionsTable).insert({
           'report_id': reportId,
           'user_code': userCode,
           'reaction_type': reactionType,
         });
+      } else {
+        await client.from(reactionsTable).delete().eq('id', existing['id']);
       }
     } catch (e) {
       debugPrint('SupabaseService.toggleReaction error: $e');
@@ -99,8 +112,7 @@ class SupabaseService {
   }
 
   /// Obtiene las reacciones del usuario para un reporte
-  Future<Set<String>> getUserReactions(
-      String reportId, String userCode) async {
+  Future<Set<String>> getUserReactions(String reportId, String userCode) async {
     try {
       final response = await client
           .from(reactionsTable)
@@ -121,14 +133,121 @@ class SupabaseService {
   // ALERTAS S.O.S.
   // ============================================================
 
-  /// Registra una alerta S.O.S. en la base de datos
-  Future<bool> insertSosAlert(Map<String, dynamic> data) async {
+  /// Publica el evento efímero y su tarjeta temporal en el Muro.
+  /// La ubicación ya debe llegar aproximada y nunca se publica una dirección.
+  Future<SosPublishResult> publishSosAlert({
+    required String activationId,
+    required String userCode,
+    required int zone,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final alert = await client
+        .from(sosAlertsTable)
+        .upsert({
+          'id': activationId,
+          'user_code': userCode,
+          'latitude': latitude,
+          'longitude': longitude,
+          'address': null,
+          'status': 'activo',
+        })
+        .select('id')
+        .single();
+
     try {
-      await client.from(sosAlertsTable).insert(data);
-      return true;
-    } catch (e) {
-      debugPrint('SupabaseService.insertSosAlert error: $e');
-      return false;
+      final report = await client
+          .from(reportsTable)
+          .upsert({
+            'id': activationId,
+            'user_code': userCode,
+            'zone': zone,
+            'category': 'sos',
+            'description':
+                '🚨 Alerta S.O.S. activa. Ubicación aproximada disponible en el mapa.',
+            'latitude': latitude,
+            'longitude': longitude,
+            'address': null,
+            'tag': 'rojo',
+            'status': 'activo',
+          })
+          .select('id')
+          .single();
+      return SosPublishResult(
+        alertId: alert['id'] as String,
+        reportId: report['id'] as String,
+      );
+    } catch (error, stackTrace) {
+      // A wall projection is part of a successful transmission, not an
+      // optional side effect. Preserve the row for audit, but make it inactive
+      // and remove its public position before reporting the real failure.
+      try {
+        await client
+            .from(sosAlertsTable)
+            .update({
+              'status': 'cancelado',
+              'latitude': null,
+              'longitude': null,
+              'address': null,
+            })
+            .eq('id', activationId)
+            .eq('user_code', userCode);
+      } catch (cleanupError) {
+        if (kDebugMode) {
+          debugPrint(
+            '[SOS][sos_alerts.rollback] error=${cleanupError.runtimeType}',
+          );
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<void> updateActiveSosLocation({
+    required String alertId,
+    required String userCode,
+    required double latitude,
+    required double longitude,
+  }) async {
+    await client
+        .from(sosAlertsTable)
+        .update({'latitude': latitude, 'longitude': longitude, 'address': null})
+        .eq('id', alertId)
+        .eq('user_code', userCode)
+        .eq('status', 'activo');
+  }
+
+  /// Ends public sharing and removes coordinates from both public projections.
+  /// Requires supabase/migrations/sos_lifecycle_privacy.sql.
+  Future<void> finishSosAlert({
+    required String alertId,
+    required String userCode,
+    String? reportId,
+  }) async {
+    await client
+        .from(sosAlertsTable)
+        .update({
+          'status': 'atendido',
+          'latitude': null,
+          'longitude': null,
+          'address': null,
+          'finished_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', alertId)
+        .eq('user_code', userCode);
+
+    if (reportId != null) {
+      await client
+          .from(reportsTable)
+          .update({
+            'status': 'resuelto',
+            'description': 'Alerta S.O.S. finalizada.',
+            'latitude': null,
+            'longitude': null,
+            'address': null,
+          })
+          .eq('id', reportId)
+          .eq('user_code', userCode);
     }
   }
 
@@ -166,7 +285,9 @@ class SupabaseService {
         query = query.eq('category', category);
       }
 
-      final result = await query.order('created_at', ascending: false).limit(limit);
+      final result = await query
+          .order('created_at', ascending: false)
+          .limit(limit);
       return result;
     } catch (e) {
       debugPrint('SupabaseService.getArchivedReports error: $e');
@@ -181,9 +302,10 @@ class SupabaseService {
   /// Obtiene el nivel y puntos totales de un vecino.
   Future<Map<String, dynamic>?> getVecinoLevel(String userCode) async {
     try {
-      final result = await client.rpc('get_vecino_level', params: {
-        'p_user_code': userCode,
-      });
+      final result = await client.rpc(
+        'get_vecino_level',
+        params: {'p_user_code': userCode},
+      );
       if (result is List && result.isNotEmpty) {
         return result[0] as Map<String, dynamic>;
       }
@@ -194,7 +316,6 @@ class SupabaseService {
     }
   }
 
-  /// Agrega puntos a un vecino por una acción.
   Future<int> addVecinoPoints({
     required String userCode,
     required int points,
@@ -202,15 +323,18 @@ class SupabaseService {
     String? description,
   }) async {
     try {
-      final result = await client.rpc('add_vecino_points', params: {
-        'p_user_code': userCode,
-        'p_points': points,
-        'p_reason': reason,
-        'p_description': description,
-      });
+      final result = await client.rpc(
+        'add_vecino_points',
+        params: {
+          'p_user_code': userCode,
+          'p_points': points,
+          'p_reason': reason,
+          'p_description': description,
+        },
+      );
       return (result as num?)?.toInt() ?? 0;
-    } catch (e) {
-      debugPrint('SupabaseService.addVecinoPoints error: $e');
+    } catch (error) {
+      debugPrint('SupabaseService.addVecinoPoints error: $error');
       return 0;
     }
   }
@@ -223,12 +347,15 @@ class SupabaseService {
     double? lng,
   }) async {
     try {
-      final result = await client.rpc('do_safe_checkin', params: {
-        'p_user_code': userCode,
-        'p_zone': zone,
-        'p_lat': lat,
-        'p_lng': lng,
-      });
+      final result = await client.rpc(
+        'do_safe_checkin',
+        params: {
+          'p_user_code': userCode,
+          'p_zone': zone,
+          'p_lat': lat,
+          'p_lng': lng,
+        },
+      );
       return result as Map<String, dynamic>;
     } catch (e) {
       debugPrint('SupabaseService.doSafeCheckin error: $e');
@@ -243,28 +370,33 @@ class SupabaseService {
   /// Sube un archivo al Storage de Supabase y retorna la URL pública
   Future<String?> uploadFile(String filePath, {bool isVideo = false}) async {
     try {
-      final file = File(filePath);
-      if (!file.existsSync()) {
-        debugPrint('uploadFile: el archivo no existe en $filePath');
-        return null;
-      }
-
-      final String ext = filePath.split('.').last.toLowerCase();
-      final String fileName =
-          '${const Uuid().v4()}.$ext';
+      final bytes = await XFile(filePath).readAsBytes();
+      if (bytes.isEmpty) return null;
+      final rawExtension = filePath.split('.').last.toLowerCase();
+      final String ext =
+          rawExtension.length <= 5 &&
+              RegExp(r'^[a-z0-9]+$').hasMatch(rawExtension)
+          ? rawExtension
+          : isVideo
+          ? 'mp4'
+          : 'jpg';
+      final String fileName = '${const Uuid().v4()}.$ext';
       final String folder = isVideo ? 'videos' : 'images';
       final String storagePath = '$folder/$fileName';
 
-      await client.storage.from(_storageBucket).upload(
+      await client.storage
+          .from(_storageBucket)
+          .uploadBinary(
             storagePath,
-            file,
+            bytes,
             fileOptions: FileOptions(
               contentType: isVideo ? 'video/$ext' : 'image/$ext',
             ),
           );
 
-      final publicUrl =
-          client.storage.from(_storageBucket).getPublicUrl(storagePath);
+      final publicUrl = client.storage
+          .from(_storageBucket)
+          .getPublicUrl(storagePath);
       return publicUrl;
     } catch (e) {
       debugPrint('SupabaseService.uploadFile error: $e');
@@ -279,9 +411,10 @@ class SupabaseService {
   /// Obtiene el ranking de los top vecinos por puntos.
   Future<List<Map<String, dynamic>>> getRanking({int limit = 10}) async {
     try {
-      final result = await client.rpc('get_ranking', params: {
-        'p_limit': limit,
-      });
+      final result = await client.rpc(
+        'get_ranking',
+        params: {'p_limit': limit},
+      );
       return (result as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('SupabaseService.getRanking error: $e');
@@ -295,10 +428,10 @@ class SupabaseService {
     required int points,
   }) async {
     try {
-      final result = await client.rpc('redeem_points', params: {
-        'p_user_code': userCode,
-        'p_points': points,
-      });
+      final result = await client.rpc(
+        'redeem_points',
+        params: {'p_user_code': userCode, 'p_points': points},
+      );
       return result as Map<String, dynamic>;
     } catch (e) {
       debugPrint('SupabaseService.redeemVecinoPoints error: $e');
@@ -309,9 +442,10 @@ class SupabaseService {
   /// Obtiene el historial de canjes de un usuario.
   Future<List<Map<String, dynamic>>> getRedemptions(String userCode) async {
     try {
-      final result = await client.rpc('get_redemptions', params: {
-        'p_user_code': userCode,
-      });
+      final result = await client.rpc(
+        'get_redemptions',
+        params: {'p_user_code': userCode},
+      );
       return (result as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('SupabaseService.getRedemptions error: $e');
@@ -342,15 +476,18 @@ class SupabaseService {
           .eq('category', 'robo')
           .order('created_at', ascending: false)
           .limit(50)
-          .listen((List<Map<String, dynamic>> reports) {
-        if (reports.isEmpty) return;
+          .listen(
+            (List<Map<String, dynamic>> reports) {
+              if (reports.isEmpty) return;
 
-        // Solo procesar el reporte más reciente (primero del stream)
-        final latest = reports.first;
-        _processRoboReport(latest, onRoboDetected, reports);
-      }, onError: (Object error) {
-        debugPrint('Error en stream de reportes Robo: $error');
-      });
+              // Solo procesar el reporte más reciente (primero del stream)
+              final latest = reports.first;
+              _processRoboReport(latest, onRoboDetected, reports);
+            },
+            onError: (Object error) {
+              debugPrint('Error en stream de reportes Robo: $error');
+            },
+          );
     } catch (e) {
       debugPrint('Error iniciando stream de Robo: $e');
     }
@@ -446,7 +583,8 @@ class SupabaseService {
       } catch (_) {
         // Bucket no existe - no podemos crearlo con anon key
         debugPrint(
-            'Storage bucket "$_storageBucket" no existe. Créalo en Supabase Dashboard > Storage.');
+          'Storage bucket "$_storageBucket" no existe. Créalo en Supabase Dashboard > Storage.',
+        );
         return false;
       }
     } catch (e) {
@@ -500,4 +638,3 @@ class RoboNotificationData {
       'distance: $distance, similarReports: $similarReportsCount, '
       'zone: $zone)';
 }
-

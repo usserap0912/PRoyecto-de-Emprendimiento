@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/app.dart';
 import 'package:safezone/models/report.dart';
+import 'package:safezone/screens/entry/zone_selection_screen.dart';
+import 'package:safezone/services/territory_service.dart';
 
 void main() {
   setUp(() {
@@ -14,26 +18,46 @@ void main() {
     // El título SafeZone aparece en el splash
     expect(find.text('SafeZone'), findsOneWidget);
 
-    // Avanzar el splash (4s) para que navegue y no queden timers pendientes
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
+    // Desmontar el splash para cancelar su temporizador de navegación.
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('ZoneSelectionScreen has zones and continue button',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(const SafeZoneApp());
+  testWidgets('ZoneSelectionScreen has zones and continue button', (
+    WidgetTester tester,
+  ) async {
+    final verifiedGeoJson = await tester.runAsync(
+      () => File(TerritoryService.verifiedZonesAsset).readAsString(),
+    );
+    final candidateGeoJson = await tester.runAsync(
+      () => File(TerritoryService.candidateZonesAsset).readAsString(),
+    );
+    final zones = TerritoryService.combineSelectableZones([
+      ...TerritoryService.parseVerifiedZones(verifiedGeoJson!),
+      ...TerritoryService.parseFeatureCollection(candidateGeoJson!),
+    ]);
 
-    // Esperar el splash (4s) para llegar a la selección de zona
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      MaterialApp(home: ZoneSelectionScreen(loadZones: () async => zones)),
+    );
+    await tester.pump();
 
     // El título SafeZone aparece
     expect(find.text('SafeZone'), findsOneWidget);
     // El botón CONTINUAR existe
     expect(find.text('CONTINUAR'), findsOneWidget);
-    // Las primeras zonas existen en el árbol
-    expect(find.text('1era Zona'), findsOneWidget);
-    expect(find.text('2da Zona'), findsOneWidget);
+    // El selector admite zonas reconocidas sin exigir geometría.
+    expect(find.text('ZONA I'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('ZONA X'),
+      160,
+      scrollable: find.byType(Scrollable),
+    );
+    expect(find.text('ZONA VIII'), findsOneWidget);
+    expect(find.text('ZONA IX'), findsOneWidget);
+    expect(find.text('ZONA X'), findsOneWidget);
+    expect(find.text('Sin punto verificado'), findsWidgets);
+    expect(find.text('ZONA XI'), findsNothing);
+    expect(find.text('ZONA XIV'), findsNothing);
   });
 
   group('Report model', () {
@@ -78,9 +102,9 @@ void main() {
 
     test('categoryLabelFor returns correct labels', () {
       expect(Report.categoryLabelFor('robo'), 'Robo');
-      expect(Report.categoryLabelFor('sospechoso'), 'Sospechoso');
-      expect(Report.categoryLabelFor('extorsion'), 'Extorsión');
-      expect(Report.categoryLabelFor('alumbrado'), 'Alumbrado');
+      expect(Report.categoryLabelFor('sospechoso'), 'Actividad sospechosa');
+      expect(Report.categoryLabelFor('extorsion'), 'Extorsión / Amenaza');
+      expect(Report.categoryLabelFor('alumbrado'), 'Falla de alumbrado');
       expect(Report.categoryLabelFor('otros'), 'Otros');
     });
 
@@ -106,7 +130,7 @@ void main() {
         tag: 'verde',
         createdAt: now,
       );
-      expect(report2.tagLabel, 'Buena Noticia');
+      expect(report2.tagLabel, 'Información / situación positiva');
     });
 
     test('toMap and fromMap round-trip', () {

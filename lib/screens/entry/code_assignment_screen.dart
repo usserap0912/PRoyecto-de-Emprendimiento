@@ -1,4 +1,6 @@
 import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
@@ -33,74 +35,76 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _fadeAnim = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeIn),
-    );
+    _fadeAnim = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeIn));
     _scaleAnim = Tween<double>(begin: 0.9, end: 1).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
     );
 
-    // Cargar o generar código inmediatamente
+    // El backend actual usa el alias pseudónimo legado guardado localmente.
     _initializeUserCode();
   }
 
   Future<void> _initializeUserCode() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Buscar código existente bajo la clave 'user_device_code'
-    final existingCode = prefs.getString('user_device_code');
-
-    if (existingCode != null) {
-      // Ya existe un código para este dispositivo → reutilizarlo
-      _userCode = existingCode;
-      // También actualizar la zona guardada
-      await prefs.setInt('user_zone', widget.zone);
-    } else {
-      // Primera vez en este dispositivo → generar código único
-      _userCode = _generateCode();
-      await prefs.setString('user_device_code', _userCode);
-      await prefs.setInt('user_zone', widget.zone);
-    }
-
-    if (!mounted) return;
-
-    // Mostrar el código y la animación
-    setState(() {
-      _displayCode = _userCode;
-      _isReady = true;
-    });
-    _animController.forward();
-
-    // Guardar perfil en Supabase (en background)
-    _saveProfileToSupabase();
-  }
-
-  Future<void> _saveProfileToSupabase() async {
+    if (kDebugMode) debugPrint('[ENTRY] code_assignment_started');
     setState(() => _isSaving = true);
-    await _supabase.createProfile({
-      'user_code': _userCode,
-      'zone': widget.zone,
-    });
-    if (mounted) setState(() => _isSaving = false);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final existingCode = preferences.getString('user_device_code');
+      _userCode = existingCode ?? _generateCode();
+      await preferences.setString('user_device_code', _userCode);
+      await preferences.setInt('user_zone', widget.zone);
+
+      final profileSaved = await _supabase.ensureLegacyProfile(
+        userCode: _userCode,
+        zone: widget.zone,
+      );
+      if (kDebugMode) {
+        debugPrint(
+          profileSaved
+              ? '[ENTRY] legacy_profile_ready'
+              : '[ENTRY] legacy_profile_not_confirmed',
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _displayCode = _userCode;
+        _isReady = true;
+      });
+      _animController.forward();
+      if (kDebugMode) debugPrint('[ENTRY] neighbor_code_ready');
+    } catch (error) {
+      if (kDebugMode) debugPrint('[ENTRY] code_assignment_failed');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No pudimos preparar tu código. Inténtalo nuevamente.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   String _generateCode() {
     final random = Random();
-    final letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    final numbers = '0123456789';
-    final code =
-        '${letters[random.nextInt(letters.length)]}${numbers[random.nextInt(numbers.length)]}${letters[random.nextInt(letters.length)]}${random.nextInt(10)}';
-    return 'User-$code';
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const numbers = '0123456789';
+    final suffix =
+        '${letters[random.nextInt(letters.length)]}'
+        '${numbers[random.nextInt(numbers.length)]}'
+        '${letters[random.nextInt(letters.length)]}'
+        '${numbers[random.nextInt(numbers.length)]}';
+    return 'User-$suffix';
   }
 
   void _enterApp() {
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => HomeScreen(
-          userCode: _userCode,
-          zone: widget.zone,
-        ),
+        builder: (_) => HomeScreen(userCode: _userCode, zone: widget.zone),
       ),
       (route) => false,
     );
@@ -203,7 +207,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                       child: Column(
                         children: [
                           Text(
-                            'Tu código de identidad',
+                            'Tu código de vecino',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.white.withValues(alpha: 0.7),
@@ -288,7 +292,7 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: Text(
-                        'Nadie sabrá quién eres. Este código es tu máscara para reportar y ayudar a tu comunidad de forma segura.',
+                        'Este código te identifica de forma anónima dentro de SafeZone.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
@@ -310,18 +314,24 @@ class _CodeAssignmentScreenState extends State<CodeAssignmentScreen>
                   width: double.infinity,
                   height: 60,
                   child: ElevatedButton(
-                    onPressed: _isReady ? _enterApp : null,
+                    onPressed: _isSaving
+                        ? null
+                        : _isReady
+                        ? _enterApp
+                        : _initializeUserCode,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: AppTheme.primaryGreen,
-                      disabledBackgroundColor: Colors.white.withValues(alpha: 0.3),
+                      disabledBackgroundColor: Colors.white.withValues(
+                        alpha: 0.3,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                       elevation: 4,
                     ),
                     child: const Text(
-                      'INGRESAR A SAFEZONE',
+                      'CONTINUAR',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

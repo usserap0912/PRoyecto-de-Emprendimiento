@@ -1,114 +1,114 @@
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart' as handler;
 
-/// Servicio centralizado para gestionar permisos de la app SafeZone.
-///
-/// Verifica y solicita [Permission.locationWhenInUse], [Permission.camera]
-/// y [Permission.photos] (Android 13+ / iOS).
-///
-/// Retorna [false] si algún permiso fue denegado permanentemente,
-/// para que la UI pueda mostrar un SnackBar informativo.
+enum AppPermissionResult { granted, denied, permanentlyDenied, unavailable }
+
+/// Requests one capability at the moment it is used. The UI is responsible for
+/// explaining why before invoking a request method.
 class PermissionService {
   static final PermissionService _instance = PermissionService._internal();
   factory PermissionService() => _instance;
   PermissionService._internal();
 
-  /// Verifica y solicita todos los permisos necesarios para SafeZone.
-  ///
-  /// - Si ya están otorgados, no hace nada.
-  /// - Si están denegados, los solicita.
-  /// - Si fueron denegados permanentemente, retorna `false`.
-  ///
-  /// [showGoToSettings] Si es `true`, abre la configuración del sistema
-  /// cuando un permiso fue denegado permanentemente (útil para botón
-  /// "Abrir Configuración" en la UI).
-  Future<bool> requestAllPermissions({bool showGoToSettings = false}) async {
+  Future<AppPermissionResult> requestLocationPermission() async {
     try {
-      // 1. Ubicación (cuando la app está en uso)
-      final locationStatus = await Permission.locationWhenInUse.status;
-      if (locationStatus.isDenied) {
-        final result = await Permission.locationWhenInUse.request();
-        if (result.isPermanentlyDenied) {
-          if (showGoToSettings) await openAppSettings();
-          return false;
-        }
-      } else if (locationStatus.isPermanentlyDenied) {
-        if (showGoToSettings) await openAppSettings();
-        return false;
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return AppPermissionResult.unavailable;
       }
 
-      // 2. Cámara
-      final cameraStatus = await Permission.camera.status;
-      if (cameraStatus.isDenied) {
-        final result = await Permission.camera.request();
-        if (result.isPermanentlyDenied) {
-          if (showGoToSettings) await openAppSettings();
-          return false;
-        }
-      } else if (cameraStatus.isPermanentlyDenied) {
-        if (showGoToSettings) await openAppSettings();
-        return false;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
       }
+      return switch (permission) {
+        LocationPermission.always ||
+        LocationPermission.whileInUse => AppPermissionResult.granted,
+        LocationPermission.deniedForever =>
+          AppPermissionResult.permanentlyDenied,
+        LocationPermission.denied => AppPermissionResult.denied,
+        LocationPermission.unableToDetermine => AppPermissionResult.unavailable,
+      };
+    } catch (error) {
+      debugPrint('PermissionService.location error: $error');
+      return AppPermissionResult.unavailable;
+    }
+  }
 
-      // 3. Fotos (Android 13+ usa Permission.photos en vez de storage)
-      // Intentamos con Permission.photos primero; si falla, usamos Permission.storage
-      try {
-        final photosStatus = await Permission.photos.status;
-        if (photosStatus.isDenied) {
-          final result = await Permission.photos.request();
-          if (result.isPermanentlyDenied) {
-            if (showGoToSettings) await openAppSettings();
-            return false;
-          }
-        } else if (photosStatus.isPermanentlyDenied) {
-          if (showGoToSettings) await openAppSettings();
-          return false;
-        }
-      } catch (_) {
-        // Fallback para Android < 13: usar Permission.storage
-        final storageStatus = await Permission.storage.status;
-        if (storageStatus.isDenied) {
-          final result = await Permission.storage.request();
-          if (result.isPermanentlyDenied) {
-            if (showGoToSettings) await openAppSettings();
-            return false;
-          }
-        } else if (storageStatus.isPermanentlyDenied) {
-          if (showGoToSettings) await openAppSettings();
-          return false;
-        }
+  Future<AppPermissionResult> requestCameraPermission() async {
+    if (kIsWeb) return AppPermissionResult.granted;
+    return _request(handler.Permission.camera);
+  }
+
+  Future<AppPermissionResult> requestPhotosPermission() async {
+    // Browsers and Android's system photo picker mediate access per selection;
+    // there is no broad library permission to request in advance.
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) {
+      return AppPermissionResult.granted;
+    }
+    try {
+      return _request(handler.Permission.photos);
+    } catch (_) {
+      return _request(handler.Permission.storage);
+    }
+  }
+
+  Future<AppPermissionResult> _request(handler.Permission permission) async {
+    try {
+      var status = await permission.status;
+      if (status.isDenied) status = await permission.request();
+      if (status.isGranted || status.isLimited) {
+        return AppPermissionResult.granted;
       }
+      if (status.isPermanentlyDenied || status.isRestricted) {
+        return AppPermissionResult.permanentlyDenied;
+      }
+      return AppPermissionResult.denied;
+    } catch (error) {
+      debugPrint('PermissionService request error: $error');
+      return AppPermissionResult.unavailable;
+    }
+  }
 
-      return true;
-    } catch (e) {
-      debugPrint('PermissionService.requestAllPermissions error: $e');
+  @Deprecated('Solicita cada permiso únicamente cuando la función lo necesita.')
+  Future<bool> requestAllPermissions({bool showGoToSettings = false}) async {
+    final location = await requestLocationPermission();
+    final camera = await requestCameraPermission();
+    final photos = await requestPhotosPermission();
+    final granted =
+        location == AppPermissionResult.granted &&
+        camera == AppPermissionResult.granted &&
+        photos == AppPermissionResult.granted;
+    if (!granted && showGoToSettings) await openSettings();
+    return granted;
+  }
+
+  Future<bool> hasLocationPermission() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      return permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+    } catch (_) {
       return false;
     }
   }
 
-  /// Verifica solo el permiso de ubicación (útil para mapas / reportes).
-  Future<bool> hasLocationPermission() async {
-    final status = await Permission.locationWhenInUse.status;
-    return status.isGranted;
-  }
-
-  /// Verifica solo el permiso de cámara (útil para tomar fotos/video).
   Future<bool> hasCameraPermission() async {
-    final status = await Permission.camera.status;
-    return status.isGranted;
+    if (kIsWeb) return true;
+    return handler.Permission.camera.isGranted;
   }
 
-  /// Verifica solo el permiso de fotos/galería.
   Future<bool> hasPhotosPermission() async {
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) return true;
     try {
-      return await Permission.photos.isGranted;
+      return await handler.Permission.photos.isGranted;
     } catch (_) {
-      return await Permission.storage.isGranted;
+      return handler.Permission.storage.isGranted;
     }
   }
 
-  /// Abre la configuración de la app en el sistema.
   Future<bool> openSettings() async {
-    return await openAppSettings();
+    if (kIsWeb) return false;
+    return handler.openAppSettings();
   }
 }
