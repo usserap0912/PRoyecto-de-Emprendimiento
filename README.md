@@ -23,9 +23,11 @@ SafeZone es una aplicación móvil que permite a los vecinos de Collique colabor
 | 🆘 **S.O.S.** | Alerta de emergencia con cuenta regresiva de 3s, vibración háptica, envío de ubicación GPS exacta a Supabase, modo offline |
 | 💬 **Chat Vecinal** | Chat anónimo en tiempo real con los vecinos, burbujas diferenciadas (propio/otros), contador de mensajes |
 | 📝 **Reportar** | Formulario para reportar incidentes con fotos, videos, selección de categoría (robo, sospechoso, extorsión, alumbrado, otros) y nivel de riesgo |
-| 👤 **Mi Perfil** | Estadísticas personales (reportes, reacciones, alertas SOS), información del código y zona, toggle de tema claro/oscuro |
+| 👤 **Mi Perfil** | Estadísticas personales (reportes, reacciones, alertas SOS), información del código y zona |
 | 🔐 **Ingreso Seguro** | Splash animado con consejos de seguridad → selección de zona (14 zonas) → captcha vecinal → código único permanente por dispositivo |
-| 🌙 **Modo Oscuro** | Tema claro/oscuro configurable con persistencia en SharedPreferences, aplicado globalmente |
+| 🏆 **Puntos Vecinales** | Nivel y puntos por actividad (`get_vecino_level`), ranking de vecinos, check-ins de zona segura (`do_safe_checkin`) y canje de puntos por días Premium (`redeem_points`) |
+| 🔋 **Modo Ahorro** | Reduce consumo de batería/datos desactivando sonidos, animaciones, partículas, hápticos, precarga de imágenes y frecuencia de actualizaciones en tiempo real |
+| 🔔 **Notificaciones** | Push locales de reportes de robo y alertas S.O.S. en la zona del vecino (Android) |
 
 ---
 
