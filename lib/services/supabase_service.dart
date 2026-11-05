@@ -426,36 +426,7 @@ class SupabaseService {
     }
   }
 
-  /// Canjea puntos por días Premium.
-  Future<Map<String, dynamic>> redeemVecinoPoints({
-    required String userCode,
-    required int points,
-  }) async {
-    try {
-      final result = await client.rpc(
-        'redeem_points',
-        params: {'p_user_code': userCode, 'p_points': points},
-      );
-      return result as Map<String, dynamic>;
-    } catch (e) {
-      debugPrint('SupabaseService.redeemVecinoPoints error: $e');
-      return {'success': false, 'message': 'Error al canjear puntos: $e'};
-    }
-  }
-
-  /// Obtiene el historial de canjes de un usuario.
-  Future<List<Map<String, dynamic>>> getRedemptions(String userCode) async {
-    try {
-      final result = await client.rpc(
-        'get_redemptions',
-        params: {'p_user_code': userCode},
-      );
-      return (result as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      debugPrint('SupabaseService.getRedemptions error: $e');
-      return [];
-    }
-  }
+  // (Canje de puntos por Premium eliminado de la app)
 
   // ============================================================
   // NOTIFICACIONES EN TIEMPO REAL: Reportes "Robo"

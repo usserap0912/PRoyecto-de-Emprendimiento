@@ -29,8 +29,6 @@ class AppTheme {
   static const Color sectionMapa = Color(0xFF388E3C);       // Verde
   static const Color sectionChat = Color(0xFF00897B);       // Teal
   static const Color sectionReportar = Color(0xFFF57C00);   // Naranja
-  static const Color sectionPremium = Color(0xFFFFA000);    // Ámbar
-  static const Color sectionZoneBot = Color(0xFF1976D2);    // Azul escudo
   static const Color sectionPerfil = Color(0xFF7B1FA2);     // Púrpura
 
   // Dark theme specific

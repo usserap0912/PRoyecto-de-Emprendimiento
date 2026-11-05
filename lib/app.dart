@@ -10,7 +10,7 @@ class SafeZoneApp extends StatelessWidget {
     return MaterialApp(
       title: 'SafeZone - Collique',
       debugShowCheckedModeBanner: false,
-      // Tema claro fijo: el modo oscuro se eliminó de la app.
+      // Tema claro fijo (modo oscuro desactivado en toda la app)
       theme: AppTheme.lightTheme,
       home: const SplashScreen(),
     );

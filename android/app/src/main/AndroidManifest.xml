@@ -23,8 +23,7 @@
     <application
         android:label="safezone"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
-        <activity
+        android:icon="@mipmap/ic_launcher">        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
@@ -46,6 +45,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- API key de Google Maps Maps SDK for Android.
+             El valor real se inyecta como placeholder ${MAPS_API_KEY} desde
+             android/app/build.gradle.kts (variable de entorno MAPS_API_KEY,
+             nunca hardcodeada). Sin key el mapa se muestra en blanco. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

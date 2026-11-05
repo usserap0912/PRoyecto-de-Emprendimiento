@@ -9,20 +9,15 @@ import 'package:safezone/screens/wall/wall_screen.dart';
 import 'package:safezone/screens/map/risk_map_screen.dart';
 import 'package:safezone/screens/sos/sos_screen.dart';
 import 'package:safezone/screens/chat/community_chat_screen.dart';
-import 'package:safezone/screens/chat/zonebot_screen.dart';
 import 'package:safezone/screens/report/report_form_screen.dart';
-import 'package:safezone/screens/premium/premium_screen.dart';
-import 'package:safezone/widgets/zonebot_bubble.dart';
 import 'package:safezone/widgets/app_tutorial.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/notification_service.dart';
-import 'package:safezone/services/zonebot_service.dart';
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/widgets/animated_nav_icon.dart';
 import 'package:safezone/models/sos_alert.dart';
 import 'package:safezone/services/sos_realtime_service.dart';
-import 'package:shimmer/shimmer.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userCode;
@@ -43,75 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Timer? _incomingSosTimer;
   SosAlert? _incomingSosAlert;
 
-  // ================================================================
-  // CREDIT WARNING: Banner animado cuando hay pocos créditos
-  // ================================================================
-  late AnimationController _creditWarningController;
-  bool _creditWarningVisible = false;
-  bool _creditWarningDismissed = false;
-
-  // ================================================================
-  // CREDIT BANNER TUTORIAL: Overlay animado primera vez
-  // ================================================================
-  static const String _prefsCreditTutorialSeen = 'credit_tutorial_seen';
-  late AnimationController _tutorialHandController;
-  bool _showCreditTutorial = false;
-
   late final List<Widget> _screens;
-
-  // ================================================================
-  // GLOBO FLOTANTE: Posición arrastrable + persistente
-  // ================================================================
-  double _bubbleLeft = 0;
-  double _bubbleTop = 0;
-  bool _bubbleReady = false;
-  bool _bubbleLoaded = false;
-
-  static const String _prefsBubbleLeft = 'zonebot_bubble_left';
-  static const String _prefsBubbleTop = 'zonebot_bubble_top';
-
-  /// Carga la posición guardada del globo desde SharedPreferences
-  Future<void> _loadBubblePosition(Size screenSize) async {
-    if (_bubbleLoaded) return;
-    _bubbleLoaded = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      final savedLeft = prefs.getDouble(_prefsBubbleLeft);
-      final savedTop = prefs.getDouble(_prefsBubbleTop);
-
-      if (savedLeft != null && savedTop != null) {
-        setState(() {
-          _bubbleLeft = savedLeft;
-          _bubbleTop = savedTop;
-          _bubbleReady = true;
-        });
-        return;
-      }
-    } catch (e) {
-      debugPrint('HomeScreen: Error cargando posición del globo: $e');
-    }
-    if (!mounted) return;
-
-    // Posición por defecto: esquina inferior derecha
-    setState(() {
-      _bubbleLeft = screenSize.width - 60 - 16;
-      _bubbleTop = screenSize.height - 60 - 80;
-      _bubbleReady = true;
-    });
-  }
-
-  /// Guarda la posición del globo en SharedPreferences
-  Future<void> _saveBubblePosition() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_prefsBubbleLeft, _bubbleLeft);
-      await prefs.setDouble(_prefsBubbleTop, _bubbleTop);
-    } catch (e) {
-      debugPrint('HomeScreen: Error guardando posición del globo: $e');
-    }
-  }
 
   // ================================================================
   // ANIMACIÓN DE ENTRADA (Welcome)
@@ -139,13 +66,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       SosScreen(userCode: widget.userCode, zone: widget.zone),
       CommunityChatScreen(userCode: widget.userCode),
       ReportFormScreen(userCode: widget.userCode, zone: widget.zone),
-      PremiumScreen(
-        userCode: widget.userCode,
-        zone: widget.zone,
-        onPremiumChanged: () {
-          if (mounted) setState(() {});
-        },
-      ),
     ];
 
     // Animación de bienvenida
@@ -163,9 +83,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Inicializar todo después del primer frame (una sola vez)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Posición del globo
-      _loadBubblePosition(MediaQuery.of(context).size);
-
       // Sonido de bienvenida
       _soundService.play('welcome');
       _welcomeController.forward().then((_) {
@@ -175,23 +92,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _checkAndShowTutorial();
         }
       });
-    });
-
-    // Animación del banner de créditos
-    _creditWarningController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-
-    // Animación del tutorial (mano señalando) — estática, sin rebote
-    _tutorialHandController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-
-    // Verificar créditos después del primer frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkCredits();
     });
 
     // Archivar reportes antiguos al iniciar (solo una vez)
@@ -210,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _checkAndShowTutorial() async {
     final isFirstLaunch = await AppTutorial.isFirstLaunch();
     if (isFirstLaunch && mounted) {
-      SoundService().play('zonebot_open');
+      SoundService().play('welcome');
       final result = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -323,75 +223,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Verifica los créditos y muestra el banner si están bajos
-  void _checkCredits() {
-    if (_creditWarningDismissed) return;
-    if (ZoneBotService.isPremium) {
-      _creditWarningVisible = false;
-      return;
-    }
-    final msgTokens = ZoneBotService.messageTokens;
-    final resetTokens = ZoneBotService.resetTokens;
-    if (msgTokens <= 5 || resetTokens <= 1) {
-      if (mounted && !_creditWarningVisible) {
-        setState(() => _creditWarningVisible = true);
-        _creditWarningController.forward();
-        // Mostrar tutorial después de que el banner termine de animarse
-        Future.delayed(const Duration(milliseconds: 1000), () {
-          _showCreditBannerTutorial();
-        });
-      }
-    }
-  }
-
-  /// Va directo al tab Premium
-  void _goToPremiumTab() {
-    HapticFeedback.lightImpact();
-    _soundService.play('nav_tap');
-    _dismissTutorial();
-    setState(() {
-      _currentIndex = 5; // Premium tab
-      _creditWarningDismissed = true;
-      _creditWarningVisible = false;
-    });
-  }
-
-  /// Muestra el tutorial del banner de créditos (solo primera vez)
-  Future<void> _showCreditBannerTutorial() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final alreadySeen = prefs.getBool(_prefsCreditTutorialSeen) ?? false;
-      if (alreadySeen || !mounted) return;
-
-      await prefs.setBool(_prefsCreditTutorialSeen, true);
-      if (!mounted) return;
-
-      setState(() => _showCreditTutorial = true);
-
-      // Auto-dismiss después de 5 segundos
-      Future.delayed(const Duration(seconds: 5), () {
-        if (mounted) _dismissTutorial();
-      });
-    } catch (e) {
-      debugPrint('HomeScreen: Error con tutorial de créditos: $e');
-    }
-  }
-
-  /// Oculta el tutorial del banner
-  void _dismissTutorial() {
-    if (_showCreditTutorial && mounted) {
-      setState(() => _showCreditTutorial = false);
-    }
-  }
-
   @override
   void dispose() {
     _incomingSosTimer?.cancel();
     _sosRealtimeService.incomingAlert.removeListener(_onIncomingSosAlert);
     _sosRealtimeService.stop(clearState: true);
     _welcomeController.dispose();
-    _creditWarningController.dispose();
-    _tutorialHandController.dispose();
     _supabaseService.unsubscribeFromRoboNotifications();
     super.dispose();
   }
@@ -425,33 +262,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _incomingSosTimer?.cancel();
   }
 
-  /// Abre ZoneBot con sonido y transición slide-up
-  void _openZoneBot() {
-    HapticFeedback.lightImpact();
-    _soundService.play('zonebot_open');
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            ZoneBotScreen(userCode: widget.userCode, zone: widget.zone),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(0.0, 1.0);
-          const end = Offset.zero;
-          const curve = Curves.easeOutCubic;
-          final tween = Tween(
-            begin: begin,
-            end: end,
-          ).chain(CurveTween(curve: curve));
-          return SlideTransition(
-            position: animation.drive(tween),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 400),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -463,8 +273,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Expanded(
                 child: IndexedStack(index: _currentIndex, children: _screens),
               ),
-              // Banner de créditos bajos (visible antes del bottom nav)
-              _buildCreditWarningBanner(),
               _buildBottomNav(),
             ],
           ),
@@ -522,26 +330,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 );
               },
-            ),
-
-          // === TUTORIAL OVERLAY (primera vez que aparece el banner) ===
-          if (_showCreditTutorial) _buildCreditTutorialOverlay(),
-
-          // === GLOBO ZONEBOT (arrastrable) ===
-          if (_bubbleReady)
-            Positioned(
-              left: _bubbleLeft,
-              top: _bubbleTop,
-              child: ZoneBotBubble(
-                onTap: _openZoneBot,
-                onDragUpdate: (Offset delta) {
-                  setState(() {
-                    _bubbleLeft += delta.dx;
-                    _bubbleTop += delta.dy;
-                  });
-                },
-                onDragEnd: _saveBubblePosition,
-              ),
             ),
 
           if (_incomingSosAlert != null) ...[
@@ -602,170 +390,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  /// Overlay animado del tutorial — mano señalando + texto shimmer + fondo semitransparente
-  Widget _buildCreditTutorialOverlay() {
-    return GestureDetector(
-      onTap: _dismissTutorial,
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.3),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            // Mano señalando hacia abajo
-            AnimatedBuilder(
-              animation: _tutorialHandController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset.zero,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Texto con shimmer
-                      Shimmer.fromColors(
-                        baseColor: Colors.amber.shade300,
-                        highlightColor: Colors.white,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.touch_app,
-                                color: Colors.white,
-                                size: 22,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                '¡Toca aquí para ver Premium!',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Flecha animada apuntando hacia abajo
-                      _AnimatedArrowDown(controller: _tutorialHandController),
-                    ],
-                  ),
-                );
-              },
-            ),
-            // Espacio para el banner (se ve debajo)
-            const SizedBox(height: 60),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Banner animado de créditos bajos — aparece cuando quedan ≤5 mensajes o ≤1 reset
-  Widget _buildCreditWarningBanner() {
-    if (!_creditWarningVisible || ZoneBotService.isPremium) {
-      return const SizedBox.shrink();
-    }
-
-    final msgTokens = ZoneBotService.messageTokens;
-    final resetTokens = ZoneBotService.resetTokens;
-    final isCritical = msgTokens <= 2 || resetTokens <= 0;
-
-    return AnimatedBuilder(
-      animation: _creditWarningController,
-      builder: (context, child) {
-        final slideOffset = (1.0 - _creditWarningController.value) * 60.0;
-        final opacity = _creditWarningController.value;
-
-        return Transform.translate(
-          offset: Offset(0, slideOffset),
-          child: Opacity(
-            opacity: opacity,
-            child: GestureDetector(
-              onTap: _goToPremiumTab,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isCritical
-                        ? [Colors.red.shade700, Colors.orange.shade800]
-                        : [Colors.amber.shade600, Colors.orange.shade600],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isCritical ? Colors.red : Colors.amber)
-                          .withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Row(
-                    children: [
-                      // Icono animado
-                      _AnimatedWarningIcon(isCritical: isCritical),
-                      const SizedBox(width: 10),
-                      // Texto
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isCritical
-                                  ? '⚠️ ¡Te quedan pocos créditos!'
-                                  : '🌟 Tus créditos se están agotando',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '$msgTokens mensajes • $resetTokens resets — '
-                              'Toca para ver Premium ♾️',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Flecha
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.white.withValues(alpha: 0.6),
-                        size: 14,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   /// Construye un icono animado para la navegación con tooltip al mantener presionado
   Widget _buildNavIcon(AnimatedNavIconType type, bool active) {
     final tooltip = switch (type) {
@@ -774,7 +398,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       AnimatedNavIconType.sos => 'Emergencia · Alerta S.O.S. inmediata',
       AnimatedNavIconType.chat => 'Chat anónimo con tus vecinos',
       AnimatedNavIconType.reportar => 'Reportar un incidente',
-      AnimatedNavIconType.premium => 'Premium · Créditos ilimitados ♾️',
     };
     return Tooltip(
       message: tooltip,
@@ -857,140 +480,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 activeIcon: _buildNavIcon(AnimatedNavIconType.reportar, true),
                 label: 'Reportar',
               ),
-              // Premium tab — acceso directo a suscripción
-              BottomNavigationBarItem(
-                icon: _buildNavIcon(AnimatedNavIconType.premium, false),
-                activeIcon: _buildNavIcon(AnimatedNavIconType.premium, true),
-                label: 'Premium',
-              ),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-// ============================================================
-// ANIMATED WARNING ICON — Icono pulsante para banner de créditos
-// ============================================================
-
-class _AnimatedWarningIcon extends StatefulWidget {
-  final bool isCritical;
-
-  const _AnimatedWarningIcon({required this.isCritical});
-
-  @override
-  State<_AnimatedWarningIcon> createState() => _AnimatedWarningIconState();
-}
-
-class _AnimatedWarningIconState extends State<_AnimatedWarningIcon>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        return Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            widget.isCritical ? Icons.battery_alert : Icons.battery_std,
-            color: Colors.white,
-            size: 18,
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ============================================================
-// ANIMATED ARROW DOWN — Flecha pulsante que señala el banner
-// ============================================================
-
-class _AnimatedArrowDown extends StatelessWidget {
-  final AnimationController controller;
-
-  const _AnimatedArrowDown({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, child) {
-        return CustomPaint(
-          size: const Size(40, 50),
-          painter: _ArrowDownPainter(progress: controller.value),
-        );
-      },
-    );
-  }
-}
-
-class _ArrowDownPainter extends CustomPainter {
-  final double progress;
-
-  _ArrowDownPainter({required this.progress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centerX = size.width / 2;
-    final centerY = size.height / 2;
-
-    // Círculo exterior pulsante
-    final circlePaint = Paint()
-      ..color = Colors.amber.withValues(alpha: 0.3 + progress * 0.4)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(centerX, centerY), 16 + progress * 4, circlePaint);
-
-    // Flecha hacia abajo
-    final arrowPaint = Paint()
-      ..color = Colors.amber
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    // Línea vertical
-    canvas.drawLine(
-      Offset(centerX, 8),
-      Offset(centerX, centerY + 8),
-      arrowPaint,
-    );
-
-    // Punta de flecha
-    final arrowHead = Path();
-    arrowHead.moveTo(centerX - 10, centerY);
-    arrowHead.lineTo(centerX, centerY + 12);
-    arrowHead.lineTo(centerX + 10, centerY);
-
-    canvas.drawPath(arrowHead, arrowPaint);
-  }
-
-  @override
-  bool shouldRepaint(_ArrowDownPainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }

@@ -8,13 +8,11 @@ import 'package:audioplayers/audioplayers.dart';
 // ============================================================
 // Sintetiza WAV en memoria para toda la app:
 //
-//   ZoneBot:    thinking / happy / idle
 //   Navegación: nav_tap (click suave al cambiar tab)
 //               button_click (botones generales)
 //   SOS:        archivos MP3 definitivos para activación y recepción
 //   Sistema:    welcome (entrada a la app)
 //               report_sent (reporte exitoso)
-//               zonebot_open (abrir chat ZoneBot)
 // ============================================================
 
 /// Coordinates separated SOS alarm plays without using a continuous audio
@@ -110,14 +108,12 @@ class SoundService {
   bool _isMuted = false;
 
   // WAV sintetizados en memoria
-  Uint8List? _thinkingWav;
   Uint8List? _happyWav;
   Uint8List? _idleWav;
   Uint8List? _navTapWav;
   Uint8List? _buttonClickWav;
   Uint8List? _welcomeWav;
   Uint8List? _reportSentWav;
-  Uint8List? _zonebotOpenWav;
   Uint8List? _fanfareWav;
 
   bool _initialized = false;
@@ -126,17 +122,15 @@ class SoundService {
   Future<void> initialize() async {
     if (_initialized) return;
     try {
-      _thinkingWav = _generateThinkingChime();
       _happyWav = _generateHappyJingle();
       _idleWav = _generateIdlePulse();
       _navTapWav = _generateNavTap();
       _buttonClickWav = _generateButtonClick();
       _welcomeWav = _generateWelcome();
       _reportSentWav = _generateReportSent();
-      _zonebotOpenWav = _generateZonebotOpen();
       _fanfareWav = _generateFanfare();
       _initialized = true;
-      debugPrint('SoundService: 9 sonidos sintetizados correctamente');
+      debugPrint('SoundService: 8 sonidos sintetizados correctamente');
     } catch (e) {
       debugPrint('SoundService: Error inicializando: $e');
     }
@@ -164,9 +158,6 @@ class SoundService {
     try {
       Uint8List? wavData;
       switch (soundName) {
-        case 'thinking':
-          wavData = _thinkingWav;
-          break;
         case 'happy':
           wavData = _happyWav;
           break;
@@ -184,9 +175,6 @@ class SoundService {
           break;
         case 'report_sent':
           wavData = _reportSentWav;
-          break;
-        case 'zonebot_open':
-          wavData = _zonebotOpenWav;
           break;
         case 'fanfare':
           wavData = _fanfareWav;
@@ -276,8 +264,6 @@ class SoundService {
     }
   }
 
-  /// Atajo para reproducir sonido de estado de ZoneBot.
-  Future<void> playStateSound(String state) => play(state);
 
   @visibleForTesting
   Future<void> dispose() async {
@@ -355,22 +341,6 @@ class SoundService {
           math.min(1.0, (durationSec - t) / release);
       return amplitude * env * math.sin(2 * math.pi * freq * t);
     });
-  }
-
-  /// ============================================================
-  // 1. Thinking Chime: ascendente 400→800 Hz, 0.3s
-  // ============================================================
-  Uint8List _generateThinkingChime() {
-    const sr = 44100, dur = 0.3;
-    final n = (sr * dur).toInt();
-    return _encodeWav(
-      List.generate(n, (i) {
-        final t = i / sr, p = i / n;
-        return 0.3 *
-            (1 - p * 0.5) *
-            math.sin(2 * math.pi * (400 + p * 400) * t);
-      }),
-    );
   }
 
   /// ============================================================
@@ -490,18 +460,4 @@ class SoundService {
     return _encodeWav(s);
   }
 
-  /// ============================================================
-  // 10. ZoneBot Open: dos notas ascendentes (600→900 Hz), 0.3s
-  // ============================================================
-  Uint8List _generateZonebotOpen() {
-    const sr = 44100, dur = 0.3;
-    final n = (sr * dur).toInt();
-    return _encodeWav(
-      List.generate(n, (i) {
-        final t = i / sr, p = i / n;
-        final freq = 600 + p * 300;
-        return 0.25 * (1 - p * 0.3) * math.sin(2 * math.pi * freq * t);
-      }),
-    );
-  }
 }

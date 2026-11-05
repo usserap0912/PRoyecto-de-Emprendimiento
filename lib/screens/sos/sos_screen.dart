@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:safezone/config/map_config.dart';
 import 'package:safezone/models/sos_session.dart';
 import 'package:safezone/services/location_service.dart';
 import 'package:safezone/services/permission_service.dart';
@@ -35,7 +33,6 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   final SoundService _soundService = SoundService();
   final LocationService _locationService = LocationService();
   final PermissionService _permissionService = PermissionService();
-  final MapController _mapController = MapController();
 
   late final AnimationController _buttonPulseController;
   late final Animation<double> _buttonPulseScale;
@@ -78,7 +75,6 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
     unawaited(_soundService.stopSosActivationAlarm());
     _buttonPulseController.dispose();
     _mapPulseController.dispose();
-    _mapController.dispose();
     super.dispose();
   }
 
@@ -608,66 +604,49 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildMiniMap() {
-    final point = LatLng(_userLat!, _userLng!);
+    final point = gmaps.LatLng(_userLat!, _userLng!);
     return SizedBox(
       height: 220,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: point,
-            initialZoom: 16,
-            minZoom: 11,
-            maxZoom: 21,
-            cameraConstraint: const CameraConstraint.unconstrained(),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: MapConfig.lightTileUrl,
-              userAgentPackageName: 'com.safezone.app',
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: point,
-                  width: 82,
-                  height: 82,
-                  child: AnimatedBuilder(
-                    animation: _mapPulseController,
-                    builder: (context, _) {
-                      final value = _mapPulseController.value;
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Container(
-                            width: 48 + value * 24,
-                            height: 48 + value * 24,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppTheme.sosRed.withValues(
-                                alpha: 0.32 * (1 - value),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: AppTheme.sosRed,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                            ),
-                            child: const Icon(Icons.sos, color: Colors.white),
-                          ),
-                        ],
-                      );
-                    },
+        child: AnimatedBuilder(
+          animation: _mapPulseController,
+          builder: (context, _) {
+            final value = _mapPulseController.value;
+            final pulseRadius = 8 + value * 14;
+            return gmaps.GoogleMap(
+              initialCameraPosition: gmaps.CameraPosition(
+                target: point,
+                zoom: 16,
+              ),
+
+              minMaxZoomPreference: const gmaps.MinMaxZoomPreference(11, 21),
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              circles: {
+                gmaps.Circle(
+                  circleId: const gmaps.CircleId('sos_pulse'),
+                  center: point,
+                  radius: pulseRadius,
+                  fillColor: AppTheme.sosRed.withValues(
+                    alpha: 0.32 * (1 - value),
+                  ),
+                  strokeColor: Colors.transparent,
+                  strokeWidth: 0,
+                ),
+              },
+              markers: {
+                gmaps.Marker(
+                  markerId: const gmaps.MarkerId('sos_me'),
+                  position: point,
+                  icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+                    gmaps.BitmapDescriptor.hueRed,
                   ),
                 ),
-              ],
-            ),
-          ],
+              },
+            );
+          },
         ),
       ),
     );

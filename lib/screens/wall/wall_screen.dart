@@ -113,7 +113,7 @@ class _WallScreenState extends State<WallScreen> {
             final newCount = reports.length;
             // Sonido de nuevo reporte (solo si ya había cargado antes)
             if (_previousReportCount > 0 && newCount > _previousReportCount) {
-              SoundService().play('zonebot_open');
+              SoundService().play('report_sent');
               HapticFeedback.mediumImpact();
             }
             _reports = _mergeReports(reports);

@@ -1,71 +1,71 @@
-import 'package:flutter_map/flutter_map.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:latlong2/latlong.dart';
 
 // ============================================================
-// CONFIGURACIÓN DEL MAPA — MAPTILER (plan gratuito)
+// CONFIGURACIÓN DEL MAPA — GOOGLE MAPS (Maps SDK for Android)
 // ============================================================
-// Para usar MapTiler:
-//   1. Regístrate gratis en https://cloud.maptiler.com/
-//   2. Copia tu API key en: https://cloud.maptiler.com/account/keys/
-//   3. Pégala aquí abajo:
+// La app corre solo en Android. El mapa nativo de Google usa la API
+// key definida en AndroidManifest via ${MAPS_API_KEY}, inyectada desde
+// android/app/build.gradle.kts leyendo la variable de entorno
+// MAPS_API_KEY (nunca hardcodeada en el repositorio).
 //
-//      static const String mapTilerApiKey = 'TU_API_KEY_AQUI';
+//   MAPS_API_KEY=AIza... flutter run         (bash / WSL / CI)
+//   $env:MAPS_API_KEY="AIza..."; flutter run (PowerShell)
 //
-// También puedes pasarla al compilar con:
-//   flutter run --dart-define=MAPTILER_API_KEY=TU_API_KEY_AQUI
-//
-// Mientras la key esté vacía, la app usa OpenStreetMap automáticamente
-// (gratis, sin key), para que el mapa funcione siempre.
+// El uso móvil del mapa (mapa, marcadores, círculos) es gratuito para
+// este tipo de app, por eso no hay proveedor de tiles ni key en código.
 // ============================================================
 class MapConfig {
-  static const String mapTilerApiKey = String.fromEnvironment(
-    'MAPTILER_API_KEY',
-    defaultValue: 'ZW9P49AqLdJrN5uEqdfl', // API key de MapTiler del proyecto
-  );
-
-  static bool get hasMapTilerKey => mapTilerApiKey.trim().isNotEmpty;
-
-  /// Estilo claro principal. Con key → MapTiler streets; sin key → OpenStreetMap.
-  static String get lightTileUrl => hasMapTilerKey
-      ? 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey'
-      : fallbackTileUrl;
-
-  /// URL de respaldo: OpenStreetMap (gratis, sin key, siempre disponible).
-  /// Se usa cuando el proveedor principal falla en tiempo de ejecución
-  /// (key agotada, revocada o error de red del proveedor).
-  static String get fallbackTileUrl =>
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-  /// Estilo oscuro.
-  /// NOTA: el plan gratuito de MapTiler NO incluye estilos oscuros
-  /// (dark-v2 responde 404), por eso usamos siempre el estilo claro.
-  static String get darkTileUrl => lightTileUrl;
-
-  /// Atribución requerida por el proveedor activo.
-  static String get attribution => hasMapTilerKey
-      ? '© MapTiler © OpenStreetMap contributors'
-      : '© OpenStreetMap contributors';
+  const MapConfig._();
 
   /// Ventana operativa amplia del mapa.
   ///
   /// No representa el límite territorial de Collique ni se renderiza como
-  /// polígono. Se conserva para impedir que pantallas heredadas se desplacen
+  /// polígono. Conservada para impedir que pantallas heredadas se desplacen
   /// accidentalmente a otra parte de Lima.
-  static final LatLngBounds colliqueBounds = LatLngBounds(
-    const LatLng(-11.945, -77.055),
-    const LatLng(-11.905, -76.985),
+  static final MapBounds colliqueBounds = MapBounds(
+    south: -11.945,
+    west: -77.055,
+    north: -11.905,
+    east: -76.985,
   );
 
   /// Fallback heredado para pantallas que todavía requieren un punto inicial.
-  /// El mapa de riesgo usa bounds calculados desde el GeoJSON verificado.
+  /// El mapa de riesgo usa los bounds calculados desde el GeoJSON verificado.
   static const LatLng colliqueCenter = LatLng(-11.9330, -77.0230);
 
-  /// Restricción operativa: el centro de cámara permanece dentro de la
-  /// ventana amplia definida arriba. No expresa pertenencia territorial.
-  ///
-  /// Se usa [CameraConstraint.containCenter] en lugar de `contain` porque
-  /// `contain` devuelve `null` en pantallas anchas y dispara un `assert`
-  /// de flutter_map que deja el mapa en negro / crashea la pantalla.
-  static CameraConstraint get colliqueConstraint =>
-      CameraConstraint.containCenter(bounds: colliqueBounds);
+  // ----------------------------------------------------------
+  // CONVERSIÓN: latlong2 (modelos/servicios internos) → Google
+  // ----------------------------------------------------------
+  // Los modelos y servicios del proyecto usan `LatLng` de latlong2. El
+  // widget GoogleMap requiere los tipos nativos de google_maps_flutter,
+  // así que la conversión vive aquí para que las pantallas no mezclen
+  // ambos paquetes.
+  static gmaps.LatLng g(LatLng point) =>
+      gmaps.LatLng(point.latitude, point.longitude);
+
+  static gmaps.LatLngBounds gBounds(MapBounds bounds) =>
+      gmaps.LatLngBounds(
+        southwest:
+            gmaps.LatLng(bounds.south, bounds.west),
+        northeast:
+            gmaps.LatLng(bounds.north, bounds.east),
+      );
+}
+
+/// Límites geográficos mínimos propios, descritos con las esquinas
+/// noreste / suroeste, independientes del paquete de mapas que se use
+/// para renderizarlos.
+class MapBounds {
+  const MapBounds({
+    required this.south,
+    required this.west,
+    required this.north,
+    required this.east,
+  });
+
+  final double south;
+  final double west;
+  final double north;
+  final double east;
 }

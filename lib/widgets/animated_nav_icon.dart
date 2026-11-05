@@ -14,7 +14,6 @@ enum AnimatedNavIconType {
   sos,
   chat,
   reportar,
-  premium,
 }
 
 /// Icono para la navegación inferior. Estático, sin movimiento.
@@ -38,7 +37,6 @@ class AnimatedNavIcon extends StatelessWidget {
       AnimatedNavIconType.sos => AppTheme.sosRed,               // Rojo SOS
       AnimatedNavIconType.chat => const Color(0xFF00897B),      // Teal
       AnimatedNavIconType.reportar => const Color(0xFFF57C00),  // Naranja
-      AnimatedNavIconType.premium => Colors.amber,               // Amarillo
     };
   }
 
@@ -50,7 +48,6 @@ class AnimatedNavIcon extends StatelessWidget {
       AnimatedNavIconType.sos => Icons.sos,
       AnimatedNavIconType.chat => Icons.chat,
       AnimatedNavIconType.reportar => Icons.add_circle,
-      AnimatedNavIconType.premium => Icons.star,
     };
   }
 

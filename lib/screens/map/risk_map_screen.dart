@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:safezone/config/map_config.dart';
@@ -39,12 +38,16 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   final TerritoryService _territoryService = TerritoryService();
   final SosService _sosService = SosService();
   final SosRealtimeService _sosRealtimeService = SosRealtimeService();
-  final MapController _mapController = MapController();
+  gmaps.GoogleMapController? _mapController;
   List<TerritorialZone> _verifiedTerritorialZones = const [];
-  CameraFit? _initialTerritoryCameraFit;
+  MapBounds? _territoryBounds;
   bool _isTerritoryLoading = true;
   Object? _territoryLoadError;
   bool _isMapReady = false;
+  // Marcadores ya migrados a iconos bitmap de Google Maps (se generan
+  // en canvas y se cachean por clave, ver _bitmapFrom).
+  Set<gmaps.Marker> _googleMarkers = const {};
+  bool _isRebuildingMarkers = false;
   // Reportes en tiempo real vía stream de Supabase
   List<Map<String, dynamic>> _reports = [];
   StreamSubscription<List<Map<String, dynamic>>>? _reportsSubscription;
@@ -66,21 +69,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   late final Animation<double> _sosBlinkOpacity;
 
   // Pulso permanente del punto de ubicación (anillo expandiéndose,
-  // similar al punto azul de Google Maps)
+  // estilo Google Maps)
   late final AnimationController _userPulseController;
   late final Animation<double> _userPulseScale;
   late final Animation<double> _userPulseOpacity;
-
-  // Tiles del mapa: MapTiler (con key) u OpenStreetMap (sin key).
-  // Ver lib/config/map_config.dart.
-  //
-  // Si el proveedor principal falla en tiempo de ejecución (key agotada,
-  // revocada o error de red), cambiamos automáticamente a OpenStreetMap
-  // para que el mapa nunca se quede en blanco.
-  bool _usingFallbackTiles = false;
-
-  String get _currentTileUrl =>
-      _usingFallbackTiles ? MapConfig.fallbackTileUrl : MapConfig.lightTileUrl;
 
   // Colores discretos para las seis referencias territoriales con geometría.
   static final List<Color> _zoneColors = [
@@ -135,16 +127,19 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   Future<void> _loadTerritorialZones() async {
     try {
       final zones = await _territoryService.loadVerifiedZones();
-      final cameraFit = RiskMapCameraConfig.initialCameraFit(
+      final bounds = RiskMapCameraConfig.initialBounds(
         zones: zones,
         verifiedHealthCenters: LocationService.healthCenters,
       );
       if (!mounted) return;
       setState(() {
         _verifiedTerritorialZones = zones;
-        _initialTerritoryCameraFit = cameraFit;
+        _territoryBounds = bounds;
         _isTerritoryLoading = false;
       });
+      // Encuadrar apenas existan datos (o el mapa) disponibles.
+      _fitTerritoryCamera();
+      _rebuildMarkers();
     } catch (error, stackTrace) {
       debugPrint('Error cargando GeoJSON territorial: $error\n$stackTrace');
       if (!mounted) return;
@@ -162,14 +157,49 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     return null;
   }
 
+  /// Encuadra la cámara hacia los bounds territoriales cuando ya existan
+  /// datos y el mapa nativo esté listo. Mientras no, no hace nada.
   void _fitTerritoryCamera() {
-    final cameraFit = _initialTerritoryCameraFit;
-    if (!_isMapReady || cameraFit == null) return;
-    _mapController.fitCamera(cameraFit);
+    final bounds = _territoryBounds;
+    final controller = _mapController;
+    if (!_isMapReady || bounds == null || controller == null) return;
+    // newLatLngBounds aplica un padding simétrico: usamos el vertical
+    // (72px) para respetar el panel superior y la leyenda inferior.
+    controller.animateCamera(
+      gmaps.CameraUpdate.newLatLngBounds(
+        MapConfig.gBounds(bounds),
+        RiskMapCameraConfig.initialPadding.vertical,
+      ),
+    );
   }
 
-  void _onMapReady() {
+  void _onMapCreated(gmaps.GoogleMapController controller) {
+    _mapController = controller;
     _isMapReady = true;
+    _fitTerritoryCamera();
+  }
+
+  /// Posición inicial de cámara de la pantalla: el centro de los bounds
+  /// territoriales si ya cargaron; si no, el centro heredado de Collique.
+  /// El encuadre real into _fitTerritoryCamera se anima cuando el mapa
+  /// nativo está listo.
+  gmaps.CameraPosition _initialCameraPositionForGmaps() {
+    final bounds = _territoryBounds;
+    if (bounds != null) {
+      return gmaps.CameraPosition(
+        target: MapConfig.g(
+          LatLng(
+            (bounds.south + bounds.north) / 2,
+            (bounds.west + bounds.east) / 2,
+          ),
+        ),
+        zoom: RiskMapCameraConfig.initialZoom,
+      );
+    }
+    return gmaps.CameraPosition(
+      target: MapConfig.g(MapConfig.colliqueCenter),
+      zoom: RiskMapCameraConfig.initialZoom,
+    );
   }
 
   /// Inicia o detiene la animación de parpadeo según el estado del S.O.S.
@@ -201,7 +231,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     _positionSubscription?.cancel();
     _sosBlinkController.dispose();
     _userPulseController.dispose();
-    _mapController.dispose();
+    _mapController = null;
     super.dispose();
   }
 
@@ -289,37 +319,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       _userLng = lng;
       _currentZone = zone;
     });
-  }
-
-  /// Cambia a los tiles de respaldo (OpenStreetMap) si el proveedor
-  /// principal falla, y avisa al usuario una sola vez.
-  void _switchToFallbackTiles() {
-    if (_usingFallbackTiles || !mounted) return;
-
-    setState(() => _usingFallbackTiles = true);
-    debugPrint(
-      'RiskMapScreen: Proveedor de tiles principal falló. '
-      'Cambiando a OpenStreetMap (respaldo).',
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.map_outlined, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Mapa en modo de respaldo (OpenStreetMap). '
-                'Las calles siguen visibles.',
-              ),
-            ),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 3),
-      ),
-    );
+    // El color del punto depende de la zona / reportes recientes.
+    _rebuildMarkers();
   }
 
   /// Determina el color del punto de ubicación según el riesgo de la zona
@@ -378,12 +379,22 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   /// territorial calculado desde las referencias verificadas.
   Future<void> _recenterMap() async {
     if (_userLat != null && _userLng != null) {
-      _mapController.move(LatLng(_userLat!, _userLng!), 15.5);
+      _mapController?.animateCamera(
+        gmaps.CameraUpdate.newLatLngZoom(
+          gmaps.LatLng(_userLat!, _userLng!),
+          15.5,
+        ),
+      );
     } else {
       // Si no tenemos ubicación, intentamos obtenerla
       await _loadUserLocation();
       if (_userLat != null && _userLng != null && mounted) {
-        _mapController.move(LatLng(_userLat!, _userLng!), 15.5);
+        _mapController?.animateCamera(
+          gmaps.CameraUpdate.newLatLngZoom(
+            gmaps.LatLng(_userLat!, _userLng!),
+            15.5,
+          ),
+        );
       } else {
         _fitTerritoryCamera();
         if (mounted) {
@@ -423,6 +434,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   _isLoading = false;
                   _streamError = false;
                 });
+                _rebuildMarkers();
               }
             },
             onError: (Object error) {
@@ -453,6 +465,354 @@ class _RiskMapScreenState extends State<RiskMapScreen>
         });
       }
     }
+  }
+
+  /// Genera todos los iconos de marcador en canvas (PNG) y actualiza el set
+  /// que alimenta el [GoogleMap]. Se llama tras cada cambio relevante:
+  /// reportes, zonas cargadas, cambio de zona/S.O.S. o alertas remotas.
+  Future<void> _rebuildMarkers() async {
+    if (_isRebuildingMarkers || !mounted) return;
+    _isRebuildingMarkers = true;
+    try {
+      final Set<gmaps.Marker> markers = {};
+
+      // --- Reportes (sin S.O.S., sin coordenadas inválidas) ---
+      for (final report in _reports.where(
+        (r) => r['category'] != 'sos',
+      )) {
+        final lat = (report['lat'] ?? report['latitude']) as num?;
+        final lng = (report['lng'] ?? report['longitude']) as num?;
+        // Los reportes sin coordenadas se omiten: antes caían en (0, 0).
+        if (lat == null || lng == null) continue;
+
+        final category = report['category'] as String?;
+        final color = _colorPorCategoria(category);
+        final icon = await _balloonPinBitmap(
+          key: 'pin_${color.toARGB32()}',
+          color: color,
+          category: category,
+        );
+        if (icon == null || !mounted) return;
+        markers.add(
+          gmaps.Marker(
+            markerId: gmaps.MarkerId(
+              'report_${report['id'] ?? '$lat,$lng'}',
+            ),
+            position: gmaps.LatLng(lat.toDouble(), lng.toDouble()),
+            icon: icon,
+            anchor: Offset(0.5, 1.0),
+            consumeTapEvents: true,
+            onTap: () => _mostrarBottomSheet(report),
+          ),
+        );
+      }
+
+      // --- Zonas I–VI: etiquetas referenciales tocables ---
+      for (final zone in _verifiedTerritorialZones) {
+        final point = zone.referencePoint;
+        if (point == null) continue;
+        final icon = await _zoneLabelBitmap(
+          key: 'zone_${zone.zoneNumber}',
+          text: zone.displayLabel,
+          color: _zoneColors[(zone.zoneNumber - 1).clamp(0, _zoneColors.length - 1)],
+        );
+        if (icon == null || !mounted) return;
+        markers.add(
+          gmaps.Marker(
+            markerId: gmaps.MarkerId('zone_${zone.zoneNumber}'),
+            position: gmaps.LatLng(point.latitude, point.longitude),
+            icon: icon,
+            anchor: Offset(0.5, 0.5),
+            consumeTapEvents: true,
+            onTap: () => _mostrarInfoZona(zone),
+          ),
+        );
+      }
+      // --- POIs del catálogo verificado (solo producción) ---
+      for (final poi in LocationService.allPois.where(LocationService.isProductionPoi)) {
+        final lat = poi['lat'] as double;
+        final lng = poi['lng'] as double;
+        final type = poi['type'] as String;
+        final color = _colorForType(type);
+        final icon = await _dotBitmap(key: 'poi_${color.toARGB32()}', color: color);
+        if (icon == null || !mounted) return;
+        markers.add(
+          gmaps.Marker(
+            markerId: gmaps.MarkerId(
+              'poi_${poi['name'] ?? type}_$lat,$lng',
+            ),
+            position: gmaps.LatLng(lat, lng),
+            icon: icon,
+            anchor: Offset(0.5, 0.5),
+            consumeTapEvents: true,
+            onTap: () => _mostrarInfoPoi(poi),
+          ),
+        );
+      }
+
+      // --- S.O.S. remota: marcador estático rojo (el parpadeo lo pone
+      // el Círculo animado en cada frame). ---
+      for (final alert in _sosRealtimeService.activeAlerts.value) {
+        final icon = await _dotBitmap(
+          key: 'sos_icon',
+          color: AppTheme.sosRed,
+          icon: Icons.sos,
+          radius: 20,
+        );
+        if (icon == null || !mounted) return;
+        markers.add(
+          gmaps.Marker(
+            markerId: gmaps.MarkerId('sos_${alert.id}'),
+            position: gmaps.LatLng(alert.latitude, alert.longitude),
+            icon: icon,
+            anchor: Offset(0.5, 0.5),
+            consumeTapEvents: true,
+            onTap: () => _showRemoteSosDetails(alert),
+          ),
+        );
+      }
+
+      // --- Marcador del usuario ---
+      final userLat = _displayUserLat;
+      final userLng = _displayUserLng;
+      if (userLat != null && userLng != null) {
+        final sosActive = _sosService.isActive;
+        final dotColor = sosActive ? AppTheme.sosRed : _userDotColor();
+        final icon = await _dotBitmap(
+          key: 'me_${sosActive ? 'sos' : dotColor.toARGB32()}',
+          color: dotColor,
+          icon: sosActive ? Icons.sos : Icons.person_pin_circle,
+          radius: 14,
+        );
+        if (icon == null || !mounted) return;
+        markers.add(
+          gmaps.Marker(
+            markerId: const gmaps.MarkerId('me'),
+            position: gmaps.LatLng(userLat, userLng),
+            icon: icon,
+            anchor: Offset(0.5, 0.5),
+            consumeTapEvents: true,
+            onTap: () => _mostrarDatosUsuario(),
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _googleMarkers = markers);
+    } catch (error, stackTrace) {
+      debugPrint('RiskMapScreen: error generando marcadores bitmap: $error\n$stackTrace');
+    } finally {
+      _isRebuildingMarkers = false;
+    }
+  }
+   /// SnackBar informativo del toque en la propia ubicación (antes un
+   /// GestureDetector del marcador en flutter_map).
+  void _mostrarDatosUsuario() {
+    final zoneText = _currentZone != null
+        ? 'Estas en Zona $_currentZone (${LocationService.zoneName(_currentZone!)})'
+        : 'Estas aqui';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.person_pin, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(zoneText)),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // ================================================================
+  // BITMAPS DE MARCADOR (canvas → PNG → BitmapDescriptor)
+  // ================================================================
+
+  // ================================================================
+  // BITMAPS DE MARCADOR (canvas → PNG → BitmapDescriptor)
+  // ================================================================
+  // Cache de iconos PNG generados una sola vez por (tipo, color).
+  // La geometría misma la repite el pintado de flutter_map (_BalloonPinPainter),
+  // adaptada a presentación nativa de Google Maps vía _bitmapFrom.
+  final Map<String, gmaps.BitmapDescriptor> _iconCache = {};
+
+  /// Dibuja [logicalSize] a la escala del dispositivo y devuelve el PNG
+  /// encapsulado como icono de marcador para Google Maps.
+  Future<gmaps.BitmapDescriptor?> _bitmapFrom({
+    required String key,
+    required ui.Size logicalSize,
+    required void Function(ui.Canvas canvas) paint,
+  }) async {
+    final cached = _iconCache[key];
+    if (cached != null) return cached;
+    try {
+      final dpr = View.of(context).devicePixelRatio;
+      final fullSize = logicalSize * dpr;
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder, Offset.zero & fullSize);
+      canvas.scale(dpr);
+      paint(canvas);
+      final image = await recorder.endRecording().toImage(
+        fullSize.width.round(),
+        fullSize.height.round(),
+      );
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) return null;
+      final descriptor = gmaps.BitmapDescriptor.bytes(
+        bytes.buffer.asUint8List(),
+        imagePixelRatio: dpr,
+      );
+      _iconCache[key] = descriptor;
+      return descriptor;
+    } catch (error) {
+      debugPrint('RiskMapScreen: error generando icono [$key]: $error');
+      return null;
+    }
+  }
+
+  /// Pin globo (estilo Google Maps) + icono material de la categoría.
+  Future<gmaps.BitmapDescriptor?> _balloonPinBitmap({
+    required String key,
+    required Color color,
+    required String? category,
+  }) {
+    return _bitmapFrom(
+      key: key,
+      logicalSize: const ui.Size(46, 60),
+      paint: (canvas) =>
+          _paintBalloonPin(canvas, color, _categoryIconFor(category ?? 'otros')),
+    );
+  }
+
+  void _paintBalloonPin(ui.Canvas canvas, Color color, IconData icon) {
+    _BalloonPinPainter(color: color).paint(canvas, const ui.Size(46, 56));
+    _paintIconGlyph(canvas, icon, 18, const Offset(23, 20), Colors.white);
+  }
+
+  /// Círculo sólido con borde blanco + icono opcional (POI, usuario, S.O.S.).
+  Future<gmaps.BitmapDescriptor?> _dotBitmap({
+    required String key,
+    required Color color,
+    IconData? icon,
+    double radius = 10,
+  }) {
+    final logicalSize = ui.Size(radius * 2 + 4, radius * 2 + 4);
+    return _bitmapFrom(
+      key: key,
+      logicalSize: logicalSize,
+      paint: (canvas) {
+        final center = Offset(logicalSize.width / 2, logicalSize.height / 2);
+        canvas.drawCircle(
+          center,
+          radius,
+          ui.Paint()
+            ..color = color
+            ..style = ui.PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          center,
+          radius - 1.2,
+          ui.Paint()
+            ..color = Colors.white
+            ..style = ui.PaintingStyle.stroke
+            ..strokeWidth = 2.4,
+        );
+        if (icon != null) {
+          _paintIconGlyph(canvas, icon, radius * 0.95, center, Colors.white);
+        }
+      },
+    );
+  }
+
+  /// Etiqueta de zona (rect redondeado con borde del color de la zona).
+  Future<gmaps.BitmapDescriptor?> _zoneLabelBitmap({
+    required String key,
+    required String text,
+    required Color color,
+  }) {
+    const logicalSize = ui.Size(84, 26);
+    return _bitmapFrom(
+      key: key,
+      logicalSize: logicalSize,
+      paint: (canvas) {
+        const radius = Radius.circular(8);
+        final rrect = ui.RRect.fromRectAndCorners(
+          const ui.Rect.fromLTWH(0, 0, 84, 26),
+          topLeft: radius,
+          topRight: radius,
+          bottomLeft: radius,
+          bottomRight: radius,
+        );
+        canvas.drawRRect(
+          rrect,
+          ui.Paint()..color = Colors.black.withAlpha(140),
+        );
+        canvas.drawRRect(
+          rrect,
+          ui.Paint()
+            ..color = color
+            ..style = ui.PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+        _paintTextGlyph(canvas, text, logicalSize, Colors.white, 12);
+      },
+    );
+  }
+
+  /// Icono de Material dibujado en canvas con TextPainter + MaterialIcons.
+  void _paintIconGlyph(
+    ui.Canvas canvas,
+    IconData icon,
+    double fontSize,
+    Offset center,
+    Color color,
+  ) {
+    final textPainter = TextPainter()
+      ..text = TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontFamily: icon.fontFamily,
+          fontSize: fontSize,
+          color: color,
+        ),
+      )
+      ..textDirection = ui.TextDirection.ltr
+      ..layout(minWidth: 0, maxWidth: double.infinity);
+    textPainter.paint(
+      canvas,
+      center - Offset(textPainter.width / 2, textPainter.height / 2),
+    );
+  }
+
+  /// Texto centrado dentro de un rect lógico (etiquetas de zona).
+  void _paintTextGlyph(
+    ui.Canvas canvas,
+    String text,
+    ui.Size size,
+    Color color,
+    double fontSize,
+  ) {
+    final textPainter = TextPainter()
+      ..text = TextSpan(
+        text: text,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      )
+      ..textDirection = ui.TextDirection.ltr
+      ..maxLines = 1
+      ..layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        (size.width - textPainter.width) / 2,
+        (size.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   // ================================================================
@@ -495,97 +855,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     }
     return const Color(0xFFFFA500);
   }
-
-  // ================================================================
-  // MARCADORES DE REPORTES
-  // ================================================================
-  List<Marker> _construirMarcadores() {
-    return _reports.where((report) => report['category'] != 'sos').map((
-      report,
-    ) {
-      final lat = (report['lat'] ?? report['latitude']) as num?;
-      final lng = (report['lng'] ?? report['longitude']) as num?;
-      if (lat == null || lng == null) {
-        return Marker(
-          point: const LatLng(0, 0),
-          width: 0,
-          height: 0,
-          child: const SizedBox.shrink(),
-        );
-      }
-
-      final category = report['category'] as String?;
-      final color = _colorPorCategoria(category);
-
-      return Marker(
-        point: LatLng(lat.toDouble(), lng.toDouble()),
-        width: 46,
-        height: 56,
-        child: GestureDetector(
-          onTap: () => _mostrarBottomSheet(report),
-          child: _MarkerPin(color: color, category: category),
-        ),
-      );
-    }).toList();
-  }
-
-  List<Marker> _buildRemoteSosMarkers() {
-    return _sosRealtimeService.activeAlerts.value
-        .map((alert) {
-          return Marker(
-            point: LatLng(alert.latitude, alert.longitude),
-            width: 86,
-            height: 86,
-            child: GestureDetector(
-              onTap: () => _showRemoteSosDetails(alert),
-              child: AnimatedBuilder(
-                animation: _sosBlinkController,
-                builder: (context, _) {
-                  final pulse = _sosBlinkOpacity.value;
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 48 + pulse * 28,
-                        height: 48 + pulse * 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppTheme.sosRed.withValues(
-                            alpha: 0.38 * (1 - pulse * 0.45),
-                          ),
-                        ),
-                      ),
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: AppTheme.sosRed,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppTheme.sosRed.withValues(alpha: 0.55),
-                              blurRadius: 14,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.sos,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          );
-        })
-        .toList(growable: false);
-  }
-
   void _showRemoteSosDetails(SosAlert alert) {
     showModalBottomSheet<void>(
       context: context,
@@ -1186,111 +1455,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       }
     }
   }
-
-  /// Construye un marcador de POI con icono y color personalizados.
-  Marker _buildPoiMarker({
-    required double lat,
-    required double lng,
-    required Map<String, dynamic> poiData,
-  }) {
-    final type = poiData['type'] as String;
-
-    IconData icon;
-    Color iconColor;
-    switch (type) {
-      case 'comisaria':
-        icon = Icons.local_police;
-        iconColor = const Color(0xFF1565C0);
-        break;
-      case 'puesto':
-        icon = Icons.security;
-        iconColor = const Color(0xFF2E7D32);
-        break;
-      case 'serenazgo':
-        icon = Icons.directions_walk;
-        iconColor = const Color(0xFFE65100);
-        break;
-      case 'colegio':
-        icon = Icons.school;
-        iconColor = const Color(0xFF9C27B0);
-        break;
-      case 'parque':
-        icon = Icons.park;
-        iconColor = const Color(0xFF4CAF50);
-        break;
-      case 'mercado':
-        icon = Icons.store;
-        iconColor = const Color(0xFF795548);
-        break;
-      case 'hospital':
-        icon = Icons.local_hospital;
-        iconColor = const Color(0xFFE53935);
-        break;
-      case 'postas':
-      case 'centro_salud':
-        icon = Icons.medical_services;
-        iconColor = const Color(0xFFF44336);
-        break;
-      case 'museo':
-        icon = Icons.museum;
-        iconColor = const Color(0xFF8D6E63);
-        break;
-      case 'grifo':
-        icon = Icons.local_gas_station;
-        iconColor = const Color(0xFF546E7A);
-        break;
-      case 'equipamiento_social':
-        icon = Icons.groups;
-        iconColor = const Color(0xFF00897B);
-        break;
-      case 'cementerio':
-        icon = Icons.account_balance;
-        iconColor = const Color(0xFF616161);
-        break;
-      default:
-        icon = Icons.location_on;
-        iconColor = Colors.blue;
-    }
-
-    return Marker(
-      point: LatLng(lat, lng),
-      width: 36,
-      height: 36,
-      child: GestureDetector(
-        onTap: () => _mostrarInfoPoi(poiData),
-        child: Container(
-          decoration: BoxDecoration(
-            color: iconColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2.5),
-            boxShadow: [
-              BoxShadow(
-                color: iconColor.withValues(alpha: 0.4),
-                blurRadius: 6,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: Icon(icon, color: Colors.white, size: 18),
-        ),
-      ),
-    );
-  }
-
-  /// Construye marcadores exclusivamente desde el catálogo de producción.
-  List<Marker> _construirMarcadoresPoi() {
-    return LocationService.allPois
-        .where(LocationService.isProductionPoi)
-        .map((poi) {
-          return _buildPoiMarker(
-            lat: poi['lat'] as double,
-            lng: poi['lng'] as double,
-            poiData: poi,
-          );
-        })
-        .toList(growable: false);
-  }
-
   /// Muestra la naturaleza referencial del punto sin atribuirle límites.
   void _mostrarInfoZona(TerritorialZone zone) {
     final point = zone.referencePoint;
@@ -1877,8 +2041,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                     const SizedBox(height: 2),
                     Text(
                       '${_reports.length} reportes activos · $severityLabel'
-                      '${_sosService.isActive ? ' 🚨' : ''}'
-                      '${_usingFallbackTiles ? ' · Mapas OSM' : ''}',
+                      '${_sosService.isActive ? ' 🚨' : ''}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -2007,314 +2170,108 @@ class _RiskMapScreenState extends State<RiskMapScreen>
             )
           : Stack(
               children: [
-                // === MAPA PRINCIPAL ===
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCameraFit: _initialTerritoryCameraFit!,
-                    // Rango de zoom amplio: permite alejarse para ver todo
-                    // Collique y sus alrededores, y acercarse mucho para leer
-                    // calles y detalles (MapTiler soporta hasta nivel 22).
-                    // InteractiveFlag.all habilita el zoom con los dedos (pinch),
-                    // doble toque, arrastre y rotación.
-                    minZoom: 11.0,
-                    maxZoom: 21.0,
-                    backgroundColor: const Color(0xFFE8ECEF),
-                    cameraConstraint: RiskMapCameraConfig.cameraConstraint,
-                    onMapReady: _onMapReady,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all,
-                    ),
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate: _currentTileUrl,
-                      userAgentPackageName: 'com.safezone.app',
-                      // ============================================================
-                      // RESPALDO AUTOMÁTICO DE TILES
-                      // ============================================================
-                      // Si un tile del proveedor principal (MapTiler) falla al
-                      // cargar, cambiamos inmediatamente a OpenStreetMap para que
-                      // el mapa nunca se quede en blanco.
-                      errorTileCallback: (tile, error, stackTrace) {
-                        _switchToFallbackTiles();
-                      },
-                      evictErrorTileStrategy: EvictErrorTileStrategy.notVisible,
-                    ),
+                // === MAPA PRINCIPAL (Google Maps nativo) ===
+                AnimatedBuilder(
+                  // El pulso del usuario y el parpadeo S.O.S. redibujan los
+                  // círculos del mapa en cada frame (los marcadores bitmap
+                  // no cambian, así que no se reenvían al nativo).
+                  animation: Listenable.merge([
+                    _userPulseController,
+                    _sosBlinkController,
+                  ]),
+                  builder: (context, child) {
+                    final pulse = _userPulseScale.value;
+                    final sosOpacity = _sosBlinkOpacity.value;
+                    final sosActive = _sosService.isActive;
+                    final userLat = _displayUserLat;
+                    final userLng = _displayUserLng;
+                    final dotColor = _userDotColor();
+                    final Set<gmaps.Circle> circles = {};
 
-                    // Atribución requerida (MapTiler / OpenStreetMap)
-                    SimpleAttributionWidget(
-                      source: Text(
-                        MapConfig.attribution,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-
-                    // Marcadores agrupados con clustering
-                    MarkerClusterLayerWidget(
-                      options: MarkerClusterLayerOptions(
-                        maxClusterRadius: 60,
-                        size: const Size(40, 40),
-                        markers: _construirMarcadores(),
-                        polygonOptions: const PolygonOptions(
-                          borderColor: Colors.transparent,
-                          color: Colors.transparent,
-                        ),
-                        builder: (context, markers) {
-                          // Tamaño del cluster según cantidad (estilo Google Maps)
-                          final count = markers.length;
-                          final size = count >= 10 ? 48.0 : 40.0;
-                          return Container(
-                            width: size,
-                            height: size,
-                            decoration: BoxDecoration(
-                              color: count >= 10
-                                  ? AppTheme.brandRedBright
-                                  : AppTheme.primaryGreen,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 2.5,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.25),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                count.toString(),
-                                style: TextStyle(
-                                  fontSize: count >= 10 ? 14 : 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-
-                    // Zonas I–VI: puntos referenciales, nunca áreas o centroides.
-                    MarkerLayer(
-                      markers: _verifiedTerritorialZones
-                          .map((zone) {
-                            final point = zone.referencePoint!;
-                            return Marker(
-                              point: point,
-                              width: 82,
-                              height: 34,
-                              child: GestureDetector(
-                                onTap: () => _mostrarInfoZona(zone),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (isDark ? Colors.white : Colors.black)
-                                            .withValues(alpha: 0.55),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: _zoneColors[zone.zoneNumber - 1]
-                                          .withValues(alpha: 0.8),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    zone.displayLabel,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          })
-                          .toList(growable: false),
-                    ),
-
-                    // S.O.S. de otros usuarios: capa efímera y diferenciada.
-                    // Los reportes S.O.S. no entran al cluster para evitar
-                    // duplicar o disfrazar una emergencia como un reporte común.
-                    if (_sosRealtimeService.activeAlerts.value.isNotEmpty)
-                      MarkerLayer(markers: _buildRemoteSosMarkers()),
-
-                    // === MARCADOR DE UBICACION DEL USUARIO ===
-                    // Color según el riesgo de la zona y parpadeo durante S.O.S.
-                    if (_displayUserLat != null && _displayUserLng != null)
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: LatLng(_displayUserLat!, _displayUserLng!),
-                            width: 44,
-                            height: 44,
-                            child: GestureDetector(
-                              onTap: () {
-                                final zoneText = _currentZone != null
-                                    ? 'Estas en Zona $_currentZone (${LocationService.zoneName(_currentZone!)})'
-                                    : 'Estas aqui';
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.person_pin,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(child: Text(zoneText)),
-                                      ],
-                                    ),
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              },
-                              child: AnimatedBuilder(
-                                animation: _userPulseController,
-                                builder: (context, child) {
-                                  final dotColor = _userDotColor();
-                                  final sosActive = _sosService.isActive;
-
-                                  // Anillo de pulso permanente (estilo Google Maps)
-                                  final pulseRing = Container(
-                                    width: 40 * _userPulseScale.value,
-                                    height: 40 * _userPulseScale.value,
-                                    decoration: BoxDecoration(
-                                      color: dotColor.withValues(
-                                        alpha: 0.25 * _userPulseOpacity.value,
-                                      ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  );
-
-                                  // Punto principal
-                                  final dot = Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: dotColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 3,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: dotColor.withValues(
-                                            alpha: 0.6,
-                                          ),
-                                          blurRadius: 12,
-                                          spreadRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      sosActive
-                                          ? Icons.sos
-                                          : Icons.person_pin_circle,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  );
-
-                                  return AnimatedBuilder(
-                                    animation: _sosBlinkController,
-                                    builder: (context, child) {
-                                      // Durante S.O.S.: el punto parpadea y el anillo
-                                      // rojo pulsante sustituye al anillo verde.
-                                      if (sosActive) {
-                                        return Opacity(
-                                          opacity: _sosBlinkOpacity.value,
-                                          child: Stack(
-                                            alignment: Alignment.center,
-                                            children: [
-                                              Container(
-                                                width:
-                                                    40 *
-                                                    (1.3 +
-                                                        _sosBlinkOpacity.value *
-                                                            0.5),
-                                                height:
-                                                    40 *
-                                                    (1.3 +
-                                                        _sosBlinkOpacity.value *
-                                                            0.5),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.red.withValues(
-                                                    alpha:
-                                                        0.35 *
-                                                        _sosBlinkOpacity.value,
-                                                  ),
-                                                  shape: BoxShape.circle,
-                                                ),
-                                              ),
-                                              Container(
-                                                width: 40,
-                                                height: 40,
-                                                decoration: BoxDecoration(
-                                                  color: dotColor,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: Colors.white,
-                                                    width: 3,
-                                                  ),
-                                                  boxShadow: [
-                                                    BoxShadow(
-                                                      color: dotColor
-                                                          .withValues(
-                                                            alpha: 0.6,
-                                                          ),
-                                                      blurRadius: 12,
-                                                      spreadRadius: 2,
-                                                    ),
-                                                  ],
-                                                ),
-                                                child: const Icon(
-                                                  Icons.sos,
-                                                  color: Colors.white,
-                                                  size: 24,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }
-
-                                      // Normal: anillo de pulso verde/color de riesgo
-                                      return Stack(
-                                        alignment: Alignment.center,
-                                        children: [pulseRing, dot],
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
+                    // Pulso permanente alrededor del punto del usuario
+                    // (estilo punto azul de Google Maps). El radio aproximado
+                    // en metros evoluciona con la animación.
+                    if (userLat != null && userLng != null) {
+                      circles.add(
+                        gmaps.Circle(
+                          circleId: const gmaps.CircleId('me_pulse'),
+                          center: gmaps.LatLng(userLat, userLng),
+                          radius: 8 + pulse * 14,
+                          fillColor: (sosActive
+                                  ? AppTheme.sosRed
+                                  : dotColor)
+                              .withValues(
+                            alpha: 0.30 * _userPulseOpacity.value,
                           ),
-                        ],
+                          strokeColor:
+                              Colors.transparent,
+                          strokeWidth: 0,
+                          visible: !sosActive,
+                        ),
+                      );
+                    }
+
+                    // Parpadeo S.O.S. propio: halo rojo animado.
+                    if (sosActive && userLat != null && userLng != null) {
+                      circles.add(
+                        gmaps.Circle(
+                          circleId: const gmaps.CircleId('me_sos_blink'),
+                          center: gmaps.LatLng(userLat, userLng),
+                          radius: 18 + sosOpacity * 22,
+                          fillColor: AppTheme.sosRed.withValues(
+                            alpha: 0.35 * sosOpacity,
+                          ),
+                          strokeColor: AppTheme.sosRed.withValues(
+                            alpha: 0.8 * sosOpacity,
+                          ),
+                          strokeWidth: 2,
+                        ),
+                      );
+                    }
+
+                    // S.O.S. de otros vecinos: círculo rojo por alerta,
+                    // sincronizado con el parpadeo global.
+                    for (final alert in _sosRealtimeService.activeAlerts.value) {
+                      circles.add(
+                        gmaps.Circle(
+                          circleId: gmaps.CircleId(
+                          'sos_alert_${alert.id}',
+                          ),
+                          center: gmaps.LatLng(alert.latitude, alert.longitude),
+                          radius: 34 + sosOpacity * 24,
+                          fillColor: AppTheme.sosRed.withValues(
+                            alpha: 0.30 * (0.55 + sosOpacity * 0.45),
+                          ),
+                          strokeColor: AppTheme.sosRed,
+                          strokeWidth: 2,
+                        ),
+                      );
+                    }
+
+                    return gmaps.GoogleMap(
+                      initialCameraPosition:
+                          _initialCameraPositionForGmaps(),
+                      onMapCreated: _onMapCreated,
+                      markers: _googleMarkers,
+                      circles: circles,
+                      // Sin restricción de cámara heredada: la ventana
+                      // operativa de Collique solo limita el encuadre
+                      // inicial (bounds de las zonas I-VI).
+                      cameraTargetBounds: gmaps.CameraTargetBounds.unbounded,
+                      minMaxZoomPreference: const gmaps.MinMaxZoomPreference(
+                        11.0,
+                        21.0,
                       ),
-
-                    // POI: la única entrada de render es el catálogo VERIFIED.
-                    MarkerLayer(markers: _construirMarcadoresPoi()),
-                  ],
+                      // Controls nativos desactivados: los reemplazan los
+                      // botones propios (Zona segura / Mi ubicación).
+                      myLocationButtonEnabled: false,
+                      zoomControlsEnabled: false,
+                      compassEnabled: true,
+                      mapToolbarEnabled: false,
+                      onCameraMoveStarted: () {},
+                    );
+                  },
                 ),
-
                 // === LEYENDA DE CATEGORIAS ===
                 Positioned(
                   left: 12,
@@ -2352,11 +2309,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                             label: 'Alumbrado',
                           ),
                           _LegendItem(color: Colors.grey, label: 'Otros'),
-                          const Divider(height: 8),
-                          _LegendItem(
-                            color: AppTheme.primaryGreen,
-                            label: 'Cluster',
-                          ),
                         ],
                       ),
                     ),
@@ -2366,7 +2318,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 // === LEYENDA DE ANTIGÜEDAD ===
                 Positioned(
                   left: 12,
-                  bottom: 210,
+                  bottom: 175,
                   child: Card(
                     elevation: 4,
                     shape: RoundedRectangleBorder(
@@ -2415,7 +2367,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 // === BOTON ZONA SEGURA ===
                 Positioned(
                   left: 16,
-                  bottom: 365,
+                  bottom: 300,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -2581,58 +2533,6 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                   ),
               ],
             ),
-    );
-  }
-}
-
-// ================================================================
-// WIDGET: PIN DEL MARCADOR (estilo Google Maps)
-// ================================================================
-// Pin tipo globo (cabeza circular + punta) dibujado con CustomPaint,
-// con borde blanco, sombra y el ícono de la categoría en el centro.
-class _MarkerPin extends StatelessWidget {
-  final Color color;
-  final String? category;
-
-  const _MarkerPin({required this.color, this.category});
-
-  @override
-  Widget build(BuildContext context) {
-    IconData icon;
-    switch (category) {
-      case 'robo':
-        icon = Icons.visibility_off;
-        break;
-      case 'sos':
-        icon = Icons.sos;
-        break;
-      case 'sospechoso':
-        icon = Icons.person_search;
-        break;
-      case 'extorsion':
-        icon = Icons.block;
-        break;
-      case 'alumbrado':
-        icon = Icons.lightbulb_outline;
-        break;
-      default:
-        icon = Icons.info_outline;
-    }
-
-    return CustomPaint(
-      painter: _BalloonPinPainter(color: color),
-      size: const Size(46, 56),
-      child: Align(
-        alignment: const Alignment(0, -0.55),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 18,
-          shadows: const [
-            Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-      ),
     );
   }
 }

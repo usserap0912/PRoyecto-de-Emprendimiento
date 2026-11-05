@@ -94,7 +94,7 @@ const List<_TutorialStep> _steps = [
     icon: Icons.shield_rounded,
     title: '¡Zona Segura Activada!',
     subtitle:
-        'Recuerda: ZoneBot siempre está disponible. Solo toca el globo flotante para hablar con tu asistente IA.',
+        'No olvides marcar tu check-in de Zona Segura en el mapa. ¡Tu comunidad te espera, guardián!',
     color1: AppTheme.primaryGreen,
     color2: AppTheme.brandRedBright,
     emoji: '🎉',
@@ -199,7 +199,7 @@ class _AppTutorialState extends State<AppTutorial>
 
   void _finishTutorial() async {
     await AppTutorial.markCompleted();
-    SoundService().play('zonebot_open');
+    SoundService().play('welcome');
     widget.onComplete();
   }
 

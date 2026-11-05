@@ -1,12 +1,9 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
-import 'package:safezone/services/zonebot_service.dart';
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/services/sound_service.dart';
-import 'package:safezone/screens/premium/premium_screen.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/widgets/confetti_overlay.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -53,31 +50,10 @@ class _StatsScreenState extends State<StatsScreen>
   bool _isLoadingArchived = false;
   bool _showArchived = false;
 
-  // Animaciones
-  late AnimationController _sparkleController;
-  late AnimationController _badgePulseController;
-
   @override
   void initState() {
     super.initState();
     _loadStats();
-
-    _sparkleController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    );
-
-    _badgePulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-  }
-
-  @override
-  void dispose() {
-    _sparkleController.dispose();
-    _badgePulseController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadStats() async {
@@ -166,23 +142,9 @@ class _StatsScreenState extends State<StatsScreen>
     }
   }
 
-  void _goToPremium() {
-    // Navegar a la pantalla Premium (necesita userCode y zone)
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PremiumScreen(
-          userCode: widget.userCode,
-          zone: widget.zone,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isPremium = ZoneBotService.isPremium;
     final cardColor = isDark ? AppTheme.darkCard : Colors.white;
     final textColor = isDark ? Colors.white : Colors.black87;
     final mutedColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
@@ -190,7 +152,7 @@ class _StatsScreenState extends State<StatsScreen>
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppTheme.sectionPerfil,
-        title: Text(isPremium ? 'Mi Perfil ⭐' : 'Mi Perfil'),
+        title: const Text('Mi Perfil'),
       ),
       body: Stack(
         children: [
@@ -201,101 +163,19 @@ class _StatsScreenState extends State<StatsScreen>
           child: Column(
             children: [
               // ============================================================
-              // AVATAR + BADGE PREMIUM ANIMADO
+              // AVATAR
               // ============================================================
-              Stack(
-                children: [
-                  // Sparkles around avatar (solo premium)
-                  if (isPremium)
-                    AnimatedBuilder(
-                      animation: _sparkleController,
-                      builder: (context, child) {
-                        return CustomPaint(
-                          size: const Size(140, 140),
-                          painter: _SparklePainter(
-                            progress: _sparkleController.value,
-                            color: Colors.amber,
-                          ),
-                        );
-                      },
-                    ),
-
-                  // Avatar shield
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: isPremium
-                          ? Colors.amber.withValues(alpha: 0.15)
-                          : AppTheme.primaryGreen.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                      border: isPremium
-                          ? Border.all(
-                              color: Colors.amber.withValues(alpha: 0.4),
-                              width: 2,
-                            )
-                          : null,
-                    ),
-                    child: Icon(
-                      isPremium ? Icons.star : Icons.shield,
-                      size: 64,
-                      color: isPremium ? Colors.amber : AppTheme.primaryGreen,
-                    ),
-                  ),
-
-                  // Premium badge flotante
-                  if (isPremium)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: AnimatedBuilder(
-                        animation: _badgePulseController,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: 1.0 + _badgePulseController.value * 0.12,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Colors.amber,
-                                    Colors.orange,
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.amber.withValues(alpha: 0.5),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.star,
-                                      size: 14, color: Colors.black87),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'PREMIUM',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGreen.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shield,
+                  size: 64,
+                  color: AppTheme.primaryGreen,
+                ),
               ),
               const SizedBox(height: 20),
 
@@ -314,16 +194,14 @@ class _StatsScreenState extends State<StatsScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: BoxDecoration(
-                  color: isPremium
-                      ? Colors.amber.withValues(alpha: 0.12)
-                      : AppTheme.primaryGreen.withValues(alpha: 0.1),
+                  color: AppTheme.primaryGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   'Zona ${widget.zone} • Collique',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 13,
-                    color: isPremium ? Colors.amber.shade700 : AppTheme.primaryGreen,
+                    color: AppTheme.primaryGreen,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -340,13 +218,6 @@ class _StatsScreenState extends State<StatsScreen>
               // NIVEL VECINAL
               // ============================================================
               _buildVecinoLevelCard(isDark, textColor, mutedColor),
-
-              const SizedBox(height: 20),
-
-              // ============================================================
-              // CARD DE SUSCRIPCIÓN PREMIUM
-              // ============================================================
-              _buildPremiumCard(isDark, isPremium, textColor, mutedColor),
 
               const SizedBox(height: 20),
 
@@ -430,33 +301,6 @@ class _StatsScreenState extends State<StatsScreen>
                       textColor: textColor,
                       mutedColor: mutedColor,
                     ),
-                    const Divider(height: 24),
-                    if (isPremium) ...[
-                      const Divider(height: 24),
-                      _InfoRow(
-                        icon: Icons.star,
-                        label: 'Suscripción',
-                        value: 'Premium activo ♾️',
-                        textColor: textColor,
-                        mutedColor: mutedColor,
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'Activo',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.green,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -1397,200 +1241,6 @@ class _StatsScreenState extends State<StatsScreen>
       ],
     );
   }
-
-  /// Card de suscripción premium — animado con CTA
-  Widget _buildPremiumCard(
-      bool isDark, bool isPremium, Color textColor, Color mutedColor) {
-
-    return GestureDetector(
-      onTap: isPremium ? null : _goToPremium,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: isPremium
-              ? LinearGradient(
-                  colors: [
-                    Colors.amber.shade50,
-                    Colors.orange.shade50,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : LinearGradient(
-                  colors: [
-                    AppTheme.primaryGreen.withValues(alpha: 0.08),
-                    AppTheme.primaryDark.withValues(alpha: 0.05),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isPremium
-                ? Colors.amber.withValues(alpha: 0.4)
-                : AppTheme.primaryGreen.withValues(alpha: 0.2),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isPremium
-                  ? Colors.amber.withValues(alpha: 0.15)
-                  : Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Icono
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isPremium
-                    ? Colors.amber.withValues(alpha: 0.2)
-                    : AppTheme.primaryGreen.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isPremium ? Icons.star : Icons.star_outline,
-                color: isPremium ? Colors.amber.shade700 : AppTheme.primaryGreen,
-                size: 26,
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // Texto
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isPremium ? '⭐ Premium activo' : '🌟 SafeZone Premium',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isPremium
-                        ? 'Disfruta de todos los beneficios ilimitados'
-                        : '♾️ Tickets ilimitados para ZoneBot',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: mutedColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Flecha / Badge
-            if (isPremium)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  '✓ Activo',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.green,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              )
-            else
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Ver planes',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_ios,
-                        size: 10, color: Colors.white),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// SPARKLE PAINTER — Partículas animadas alrededor del avatar
-// ============================================================
-
-class _SparklePainter extends CustomPainter {
-  final double progress;
-  final Color color;
-
-  _SparklePainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.6)
-      ..style = PaintingStyle.fill;
-
-    for (int i = 0; i < 8; i++) {
-      final angle = (i / 8) * pi * 2 + progress * pi * 2;
-      final distance = radius * 0.65 + (progress * 0.2 * radius);
-      final x = center.dx + distance * cos(angle);
-      final y = center.dy + distance * sin(angle);
-
-      final sparkleSize = 2.0 + (progress * 2.0);
-      final opacity = ((progress + i * 0.15) % 1.0);
-
-      paint.color = color.withValues(alpha: 0.3 + opacity * 0.4);
-      canvas.drawCircle(Offset(x, y), sparkleSize, paint);
-
-      // Dibujar cruz de estrella
-      final crossPaint = Paint()
-        ..color = color.withValues(alpha: 0.2 + opacity * 0.3)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5;
-
-      canvas.drawLine(
-        Offset(x - 4, y),
-        Offset(x + 4, y),
-        crossPaint,
-      );
-      canvas.drawLine(
-        Offset(x, y - 4),
-        Offset(x, y + 4),
-        crossPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_SparklePainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }
 
 // ============================================================
@@ -1661,7 +1311,6 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final Color textColor;
   final Color mutedColor;
-  final Widget? trailing;
 
   const _InfoRow({
     required this.icon,
@@ -1669,7 +1318,6 @@ class _InfoRow extends StatelessWidget {
     required this.value,
     required this.textColor,
     required this.mutedColor,
-    this.trailing,
   });
 
   @override
@@ -1693,7 +1341,6 @@ class _InfoRow extends StatelessWidget {
           ],
         ),
         const Spacer(),
-        ?trailing,
       ],
     );
   }
