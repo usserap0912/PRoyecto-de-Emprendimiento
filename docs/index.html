@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeZone - Tu Zona Segura</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .shield {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #ff4444, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            font-size: 1.1em;
+            color: #ccc;
+            margin-bottom: 30px;
+        }
+
+        .qr-container {
+            background: white;
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            display: inline-block;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .qr-container img {
+            width: 200px;
+            height: 200px;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            margin-top: 10px;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(255, 68, 68, 0.4);
+        }
+
+        .download-btn:active {
+            transform: translateY(1px);
+        }
+
+        .features {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .feature {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .feature-icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .footer {
+            margin-top: 30px;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="shield">🛡️</div>
+        <h1>SafeZone</h1>
+        <p class="subtitle">Tu zona segura en Collique</p>
+
+        <div class="qr-container">
+            <img src="safezone-qr.png" alt="Escanea para descargar">
+        </div>
+
+        <br><br>
+        <a href="SafeZone-release.apk" class="download-btn" download>
+            📱 Descargar App
+        </a>
+
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">📍</div>
+                <div>Ubicación en tiempo real</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🚨</div>
+                <div>Alertas de seguridad</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🏥</div>
+                <div>Zonas seguras</div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>App de seguridad para la comunidad de Collique, Lima.</p>
+        </div>
+    </div>
+</body>
+</html>
