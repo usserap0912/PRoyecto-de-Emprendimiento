@@ -1,0 +1,11 @@
+# Desabilitar Jekyll para que GitHub Pages sirva los archivos directamente
+exclude: []
+ruby: false
+
+# Desabilitar la generación de sitios Jekyll
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+# No procesar los archivos .html como Jekyll templates
+jekyll_extract:solution: false
