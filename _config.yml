@@ -1,8 +1,5 @@
-# Desabilitar completamente Jekyll
-exclude: ['**/*']
+# Desabilitar Jekyll para servir archivos estáticos directamente
+exclude: ['README*', '*.md', '*.txt', 'assets/css/style.css']
 
-# No usar layouts ni procesamiento de Jekyll
-layout: null
-
-# Desactivar todos los plugins
-plugins: []
+# No generar un sitio Jekyll
+destination: .솟
