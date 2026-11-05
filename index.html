@@ -1,0 +1,185 @@
+---
+layout: null
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SafeZone - Red Vecinal de Seguridad</title>
+  <meta name="description" content="Descarga SafeZone, la red vecinal de seguridad de Collique, Comas. Reporta incidentes, alerta a tus vecinos y mantén tu comunidad segura." />
+  
+  <!-- Open Graph -->
+  <meta property="og:title" content="SafeZone - Red Vecinal de Seguridad" />
+  <meta property="og:description" content="Protege tu comunidad. Descarga SafeZone para Android." />
+  <meta property="og:url" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/" />
+  <meta property="og:image" content="https://files.catbox.moe/lzrt65.png" />
+  <meta property="og:image:width" content="512" />
+  <meta property="og:image:height" content="512" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0d0d0d 0%, #1a0a0a 30%, #2d0a0a 60%, #0d0d0d 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #ffffff;
+      overflow-x: hidden;
+    }
+    .bg-shapes {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .shape {
+      position: absolute; border-radius: 50%; opacity: 0.06;
+      animation: floatShape 20s ease-in-out infinite;
+    }
+    .shape:nth-child(1) { width: 500px; height: 500px; background: #C3110C; top: -150px; left: -150px; animation-delay: 0s; }
+    .shape:nth-child(2) { width: 350px; height: 350px; background: #740A03; top: 55%; right: -80px; animation-delay: -5s; }
+    .shape:nth-child(3) { width: 250px; height: 250px; background: #C3110C; bottom: -100px; left: 10%; animation-delay: -10s; }
+    @keyframes floatShape {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      25% { transform: translate(30px, -20px) rotate(5deg); }
+      50% { transform: translate(-20px, 30px) rotate(-3deg); }
+      75% { transform: translate(20px, 20px) rotate(4deg); }
+    }
+    .hero { position: relative; z-index: 1; text-align: center; padding: 40px 20px 20px; animation: fadeIn 1s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .shield-container { position: relative; width: 120px; height: 120px; margin: 0 auto 25px; }
+    .shield-svg { width: 100%; height: 100%; filter: drop-shadow(0 4px 12px rgba(195, 17, 12, 0.5)); }
+    .shield-pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 140px; height: 140px; border: 2px solid #C3110C; border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.4; }
+      50% { transform: translate(-50%, -50%) scale(1.3); opacity: 0; }
+    }
+    h1 { font-size: 3rem; font-weight: 800; margin-bottom: 8px; letter-spacing: -1px; text-shadow: 0 2px 20px rgba(195, 17, 12, 0.4); }
+    .tagline { font-size: 1.1rem; color: #cc8888; margin-bottom: 30px; font-weight: 300; }
+    .download-section { position: relative; z-index: 1; text-align: center; margin-bottom: 30px; }
+    .download-btn {
+      display: inline-flex; align-items: center; gap: 12px;
+      background: linear-gradient(135deg, #C3110C, #740A03);
+      color: #ffffff; padding: 15px 35px; font-size: 1.1rem; font-weight: 600;
+      border: none; border-radius: 50px; cursor: pointer; text-decoration: none;
+      transition: all 0.25s ease; box-shadow: 0 6px 25px rgba(195, 17, 12, 0.4); letter-spacing: 0.5px;
+    }
+    .download-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 35px rgba(195, 17, 12, 0.6); }
+    .download-btn:active { transform: translateY(0); }
+    .download-btn .icon { font-size: 1.3rem; }
+    .qr-section { position: relative; z-index: 1; margin-top: 35px; }
+    .qr-wrapper { background: #ffffff; padding: 15px; border-radius: 15px; display: inline-block; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+    .qr-wrapper img { display: block; width: 180px; height: 180px; }
+    .qr-label { margin-top: 10px; font-size: 0.85rem; color: #888; }
+    .features { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-top: 25px; }
+    .feature-card {
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px; padding: 15px 20px; text-align: center; min-width: 110px;
+      backdrop-filter: blur(5px); transition: all 0.2s ease;
+    }
+    .feature-card:hover { background: rgba(255, 255, 255, 0.15); transform: translateY(-3px); }
+    .feature-card .emoji { font-size: 1.8rem; margin-bottom: 6px; }
+    .feature-card .label { font-size: 0.85rem; color: #ddd; font-weight: 500; }
+    .trust-bar { position: relative; z-index: 1; display: flex; justify-content: center; gap: 30px; margin-top: 25px; color: #888; font-size: 0.8rem; flex-wrap: wrap; }
+    .trust-bar span { display: flex; align-items: center; gap: 5px; }
+    .instructions { position: relative; z-index: 1; max-width: 500px; margin: 30px auto 0; padding: 0 20px; animation: fadeIn 1.2s ease-out 0.5s backwards; }
+    .instructions h3 { text-align: center; margin-bottom: 15px; color: #ff8888; }
+    .step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; background: rgba(255, 255, 255, 0.03); padding: 12px 15px; border-radius: 10px; border-left: 3px solid #C3110C; }
+    .step-number { background: #C3110C; color: #fff; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+    .step-text { color: #ccc; font-size: 0.9rem; line-height: 1.4; }
+    .step-text strong { color: #ff6b6b; }
+    .footer { position: relative; z-index: 1; margin-top: auto; padding: 25px 20px 20px; text-align: center; color: #555; font-size: 0.8rem; }
+    .footer a { color: #C3110C; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .footer .separator { margin: 0 8px; color: #444; }
+    @media (max-width: 480px) {
+      h1 { font-size: 2.2rem; }
+      .hero { padding: 20px 15px 10px; }
+      .download-btn { padding: 13px 28px; font-size: 1rem; }
+      .features { gap: 10px; }
+      .feature-card { min-width: 90px; padding: 12px 15px; }
+      .trust-bar { gap: 15px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-shapes">
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+  </div>
+
+  <section class="hero">
+    <div class="shield-container">
+      <svg class="shield-svg" viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 5L10 25V65C10 93 29 112 50 117C71 112 90 93 90 65V25L50 5Z" fill="#C3110C" stroke="#ff4444" stroke-width="2"/>
+        <path d="M50 20L20 35V65C20 87 34 102 50 106C66 102 80 87 80 65V35L50 20Z" fill="#740A03"/>
+        <path d="M40 55L50 65L60 55V50C60 44 55 40 50 40C45 40 40 44 40 50V55Z" fill="#C3110C"/>
+        <path d="M50 65V100" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <div class="shield-pulse"></div>
+    </div>
+    <h1>SafeZone</h1>
+    <p class="tagline">Red Vecinal de Seguridad · Collique, Comas</p>
+  </section>
+
+  <section class="download-section">
+    <a href="SafeZone.apk" class="download-btn" download>
+      <span class="icon">📱</span>
+      Descargar App para Android
+    </a>
+  </section>
+
+  <section class="qr-section">
+    <div class="qr-wrapper">
+      <img src="safezone-qr.png" alt="Escanea para descargar SafeZone" />
+    </div>
+    <p class="qr-label">Escanea el código QR para descargar rápidamente</p>
+  </section>
+
+  <div class="features">
+    <div class="feature-card">
+      <div class="emoji">📡</div>
+      <div class="label">Alertas en vivo</div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">👥</div>
+      <div class="label">Vecinos conectados</div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">🚨</div>
+      <div class="label">Botón SOS</div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">📍</div>
+      <div class="label">Mapa de seguridad</div>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <h3>📋 ¿Cómo instalar?</h3>
+    <div class="step">
+      <div class="step-number">1</div>
+      <div class="step-text">Presiona el botón <strong>"Descargar App"</strong> o escanea el código QR.</div>
+    </div>
+    <div class="step">
+      <div class="step-number">2</div>
+      <div class="step-text">Permite <strong>"Instalar aplicaciones de fuentes desconocidas"</strong> cuando tu celular lo solicite.</div>
+    </div>
+    <div class="step">
+      <div class="step-number">3</div>
+      <div class="step-text">Abre SafeZone, asigna tu código de vecino y empieza a proteger tu comunidad.</div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>SafeZone — Red Vecinal de Seguridad, Collique, Comas</p>
+    <p>Versión Beta 1.0.0</p>
+    <p>Hecho con ❤️ para Collique</p>
+  </footer>
+
+</body>
+</html>
