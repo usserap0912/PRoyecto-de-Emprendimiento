@@ -1,0 +1,27 @@
+/* Reset básico para que el estilo de SafeZone funcione */
+body, html {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+/* Eliminar el contenedor de Jekyll que sobrescribe el diseño */
+.container-lg, .markdown-body {
+  display: none !important;
+}
+
+/* Quitar el estilo del título de Jekyll */
+body > h1, body > div > h1 {
+  display: none !important;
+}
+
+/* Resetear estilos de Jekyll */
+.jekyll-seo-tag {
+  display: none !important;
+}
+
+/* Asegurar que los estilos del index.html se apliquen */
+html, body {
+  background: transparent !important;
+  font-family: inherit !important;
+}
