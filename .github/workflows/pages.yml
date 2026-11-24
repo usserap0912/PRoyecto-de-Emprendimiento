@@ -6,6 +6,7 @@ on:
     paths:
       - 'index.html'
       - 'safezone-qr.png'
+      - 'safezone-logo.png'
       - '.nojekyll'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -31,7 +32,7 @@ jobs:
       - name: Preparar sitio estático
         run: |
           mkdir -p _site
-          cp index.html safezone-qr.png _site/
+          cp index.html safezone-qr.png safezone-logo.png _site/
           touch _site/.nojekyll
       - name: Configurar Pages
         uses: actions/configure-pages@v5

@@ -10,10 +10,11 @@
   <meta property="og:title" content="SafeZone - Red Vecinal de Seguridad" />
   <meta property="og:description" content="Protege tu comunidad. Descarga SafeZone para Android." />
   <meta property="og:url" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/" />
-  <meta property="og:image" content="https://files.catbox.moe/lzrt65.png" />
+  <meta property="og:image" content="https://usserap0912.github.io/PRoyecto-de-Emprendimiento/safezone-logo.png" />
   <meta property="og:image:width" content="512" />
   <meta property="og:image:height" content="512" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+  <link rel="icon" type="image/png" href="safezone-logo.png" />
+  <link rel="apple-touch-icon" href="safezone-logo.png" />
   
   <style>
     /* ============================================================
@@ -117,6 +118,7 @@
     .shield-svg {
       width: 100%;
       height: 100%;
+      object-fit: contain;
       filter: drop-shadow(0 4px 12px rgba(195, 17, 12, 0.5));
     }
 
@@ -199,7 +201,12 @@
     .qr-section {
       position: relative;
       z-index: 1;
+      width: 100%;
       margin-top: 35px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
     }
 
     .qr-wrapper {
@@ -387,20 +394,7 @@
   <!-- HERO -->
   <section class="hero">
     <div class="shield-container">
-      <svg class="shield-svg" viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M50 5L10 25V65C10 93 29 112 50 117C71 112 90 93 90 65V25L50 5Z"
-              fill="#C3110C"
-              stroke="#ff4444"
-              stroke-width="2"/>
-        <path d="M50 20L20 35V65C20 87 34 102 50 106C66 102 80 87 80 65V35L50 20Z"
-              fill="#740A03"/>
-        <path d="M40 55L50 65L60 55V50C60 44 55 40 50 40C45 40 40 44 40 50V55Z"
-              fill="#C3110C"/>
-        <path d="M50 65V100"
-              stroke="#ff4444"
-              stroke-width="3"
-              stroke-linecap="round"/>
-      </svg>
+      <img class="shield-svg" src="safezone-logo.png" alt="Logo de SafeZone" />
       <div class="shield-pulse"></div>
     </div>
     <h1>SafeZone</h1>
