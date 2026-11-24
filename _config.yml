@@ -1,5 +1,3 @@
-# Desabilitar Jekyll para servir archivos estáticos directamente
+# GitHub Pages sirve los archivos estáticos directamente.
+# .nojekyll desactiva Jekyll para que index.html se publique tal cual.
 exclude: ['README*', '*.md', '*.txt', 'assets/css/style.css']
-
-# No generar un sitio Jekyll
-destination: .솟

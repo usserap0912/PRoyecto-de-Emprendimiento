@@ -212,20 +212,49 @@ RETURNS void AS $$
 BEGIN
   DELETE FROM public.reports WHERE created_at < NOW() - INTERVAL '7 days';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 -- ============================================
 -- ACTIVACIÓN DEL MOTOR EN TIEMPO REAL
 -- ============================================
-BEGIN;
-  DROP PUBLICATION IF EXISTS supabase_realtime;
-  CREATE PUBLICATION supabase_realtime;
-COMMIT;
+-- No recrear la publicación: si se elimina, Supabase Realtime deja de
+-- recibir cambios de las tablas que no se vuelvan a agregar. Las tablas se
+-- agregan de forma idempotente (duplicate_object = ya estaba agregada).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+  ) THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
 
-ALTER PUBLICATION supabase_realtime ADD TABLE reports;
-ALTER PUBLICATION supabase_realtime ADD TABLE reactions;
-ALTER PUBLICATION supabase_realtime ADD TABLE report_comments;
-ALTER PUBLICATION supabase_realtime ADD TABLE chat_messages;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE reports;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE reactions;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE report_comments;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE chat_messages;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE sos_alerts;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ============================================================
 -- FIN DE LA PARTE 1 (esquema base). Continúa la PARTE 2 abajo.
@@ -357,7 +386,8 @@ BEGIN
 
   RETURN archived_count;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 
 -- ============================================================
@@ -723,6 +753,29 @@ CREATE INDEX IF NOT EXISTS idx_profiles_mp_subscription
 -- PRUEBA FINAL: debe devolver 0 (o el número de reportes archivados)
 -- Si ves un error rojo, avísame qué dice.
 -- ============================================================
+-- ============================================================
+-- 7) SALUD DEL PROYECTO: STORAGE, REALTIME Y LIMPIEZA
+-- ============================================================
+-- Bucket público donde la app sube fotos y videos de los reportes.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('safezone-images', 'safezone-images', TRUE)
+ON CONFLICT (id) DO UPDATE SET public = TRUE;
+
+-- Políticas de Storage: la app usa la anon key (sin login), por eso el
+-- bucket acepta lectura pública y subida anónima SOLO en ese bucket.
+DROP POLICY IF EXISTS "SafeZone images lectura publica" ON storage.objects;
+CREATE POLICY "SafeZone images lectura publica" ON storage.objects
+  FOR SELECT USING (bucket_id = 'safezone-images');
+
+DROP POLICY IF EXISTS "SafeZone images subida anonima" ON storage.objects;
+CREATE POLICY "SafeZone images subida anonima" ON storage.objects
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'safezone-images');
+
+-- Limpieza de una verificación de diagnóstico (no es dato real).
+DELETE FROM safe_checkins WHERE user_code = '__probe__';
+DELETE FROM community_points WHERE user_code = '__probe__';
+
 SELECT archive_old_reports() AS prueba_rapida;
 
 

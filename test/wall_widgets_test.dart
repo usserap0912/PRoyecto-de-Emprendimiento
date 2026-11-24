@@ -114,7 +114,10 @@ void main() {
     expect(sql, contains('UNIQUE (report_id, user_code)'));
     expect(sql, contains('archived_report_comments'));
     expect(sql, contains('INSERT INTO archived_reactions'));
-    expect(sql, contains('toggle_report_reaction'));
+    // El flujo legado escribe reacciones directamente con user_code; ya no
+    // existe el RPC toggle_report_reaction. La migración debe mantener las
+    // políticas de escritura directa que usa la app.
+    expect(sql, contains('Reactions insertable por cualquiera'));
     expect(sql, contains('ADD TABLE reactions'));
     expect(sql, contains('ADD TABLE report_comments'));
   });
