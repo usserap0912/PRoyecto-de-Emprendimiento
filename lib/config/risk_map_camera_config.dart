@@ -11,7 +11,8 @@ class RiskMapCameraConfig {
   const RiskMapCameraConfig._();
 
   /// Padding usado al encuadrar las referencias territoriales con
-  /// [CameraUpdate.newLatLngBounds] (el padding es simétrico en Google Maps).
+  /// [CameraFit.bounds] de flutter_map; respeta el panel superior y la
+  /// leyenda inferior del mapa.
   static const EdgeInsets initialPadding = EdgeInsets.fromLTRB(36, 72, 36, 100);
 
   /// Zoom de arranque mientras cargan las zonas; apenas el mapa está listo se

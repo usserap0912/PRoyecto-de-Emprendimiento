@@ -46,15 +46,15 @@ void main() {
     },
   );
 
-  test('initial camera config exposes Google Maps fit parameters', () async {
-    expect(RiskMapCameraConfig.initialZoom, inInclusiveRange(11, 21));
+  test('initial camera config exposes map fit parameters', () async {
+    expect(RiskMapCameraConfig.initialZoom, inInclusiveRange(11, 19));
 
     final geoJson = await File(
       TerritoryService.verifiedZonesAsset,
     ).readAsString();
     final zones = TerritoryService.parseVerifiedZones(geoJson);
-    // El padding que se pasa a CameraUpdate.newLatLngBounds es el vertical
-    // (simétrico en Google Maps) y debe respetar panel superior y leyenda.
+    // El padding se pasa a CameraFit.bounds y debe respetar el panel
+    // superior y la leyenda inferior.
     expect(RiskMapCameraConfig.initialPadding.vertical, greaterThan(0));
     // La cámara inicial solo se construye con datos verificados.
     expect(
@@ -75,7 +75,9 @@ void main() {
       source,
       isNot(contains('MapConfig.colliqueConstraint')),
     );
-    expect(source, contains('cameraTargetBounds: gmaps.CameraTargetBounds.unbounded'));
-    expect(source, contains('if (!_isMapReady || bounds == null || controller == null) return;'));
+    expect(source, contains('FlutterMap('));
+    expect(source, contains('CameraFit.bounds('));
+    expect(source, contains('if (!_isMapReady || bounds == null) return;'));
+    expect(source, isNot(contains('google_maps_flutter')));
   });
 }

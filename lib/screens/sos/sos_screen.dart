@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:safezone/models/sos_session.dart';
 import 'package:safezone/services/location_service.dart';
@@ -604,49 +605,76 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildMiniMap() {
-    final point = gmaps.LatLng(_userLat!, _userLng!);
+    final point = LatLng(_userLat!, _userLng!);
     return SizedBox(
       height: 220,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: AnimatedBuilder(
-          animation: _mapPulseController,
-          builder: (context, _) {
-            final value = _mapPulseController.value;
-            final pulseRadius = 8 + value * 14;
-            return gmaps.GoogleMap(
-              initialCameraPosition: gmaps.CameraPosition(
-                target: point,
-                zoom: 16,
-              ),
-
-              minMaxZoomPreference: const gmaps.MinMaxZoomPreference(11, 21),
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              circles: {
-                gmaps.Circle(
-                  circleId: const gmaps.CircleId('sos_pulse'),
-                  center: point,
-                  radius: pulseRadius,
-                  fillColor: AppTheme.sosRed.withValues(
-                    alpha: 0.32 * (1 - value),
-                  ),
-                  strokeColor: Colors.transparent,
-                  strokeWidth: 0,
-                ),
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: point,
+            initialZoom: 16,
+            minZoom: 11,
+            maxZoom: 19,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+            ),
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.safezone.safezone',
+              maxZoom: 19,
+              maxNativeZoom: 19,
+            ),
+            AnimatedBuilder(
+              animation: _mapPulseController,
+              builder: (context, _) {
+                final value = _mapPulseController.value;
+                return CircleLayer(
+                  circles: [
+                    CircleMarker(
+                      point: point,
+                      radius: 8 + value * 14,
+                      useRadiusInMeter: true,
+                      color: AppTheme.sosRed.withValues(
+                        alpha: 0.32 * (1 - value),
+                      ),
+                      borderColor: Colors.transparent,
+                      borderStrokeWidth: 0,
+                    ),
+                  ],
+                );
               },
-              markers: {
-                gmaps.Marker(
-                  markerId: const gmaps.MarkerId('sos_me'),
-                  position: point,
-                  icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
-                    gmaps.BitmapDescriptor.hueRed,
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: point,
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.topCenter,
+                  child: const Icon(
+                    Icons.location_on,
+                    color: AppTheme.sosRed,
+                    size: 40,
                   ),
                 ),
-              },
-            );
-          },
+              ],
+            ),
+            RichAttributionWidget(
+              alignment: AttributionAlignment.bottomRight,
+              showFlutterMapAttribution: false,
+              attributions: [
+                TextSourceAttribution(
+                  '© OpenStreetMap contributors',
+                  onTap: () => launchUrl(
+                    Uri.parse('https://www.openstreetmap.org/copyright'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
