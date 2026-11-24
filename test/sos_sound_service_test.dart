@@ -63,9 +63,9 @@ void main() {
     await controller.stop();
   });
 
-  test('SOS uses the real MP3 assets and registers their actual folder', () {
-    expect(SoundService.sosActivationAsset, 'sos/sos-activitation.mp3');
-    expect(SoundService.sosReceivedAlertAsset, 'sos/sos-receiveddalert.mp3');
+  test('SOS uses the new WAV assets and registers their actual folder', () {
+    expect(SoundService.sosActivationAsset, 'sos/sos-activitation.wav');
+    expect(SoundService.sosReceivedAlertAsset, 'sos/sos-receivedalert.wav');
     expect(
       File('assets/${SoundService.sosActivationAsset}').existsSync(),
       isTrue,

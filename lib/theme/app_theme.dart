@@ -25,7 +25,7 @@ class AppTheme {
   static const Color brandRedBright = Color(0xFFC3110C);
 
   // Section-specific colors for themed screens
-  static const Color sectionMuro = Color(0xFF1976D2);       // Azul
+  static const Color sectionMuro = Color(0xFFC3110C);       // Rojo de marca
   static const Color sectionMapa = Color(0xFF388E3C);       // Verde
   static const Color sectionChat = Color(0xFF00897B);       // Teal
   static const Color sectionReportar = Color(0xFFF57C00);   // Naranja
@@ -37,9 +37,41 @@ class AppTheme {
   static const Color darkSurface = Color(0xFF2C2C2C);
 
   static ThemeData get lightTheme {
+    final baseText = ThemeData.light(
+      useMaterial3: true,
+    ).textTheme.apply(fontFamily: 'Poppins');
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: 'Poppins',
+      textTheme: baseText.copyWith(
+        displayLarge: baseText.displayLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1.2,
+        ),
+        displayMedium: baseText.displayMedium?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.8,
+        ),
+        headlineLarge: baseText.headlineLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.6,
+        ),
+        headlineMedium: baseText.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+        ),
+        titleLarge: baseText.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+        ),
+        titleMedium: baseText.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        labelLarge: baseText.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryGreen,
         brightness: Brightness.light,
@@ -53,6 +85,13 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+          color: Colors.white,
+        ),
       ),
       cardTheme: CardThemeData(
         elevation: 2,
@@ -86,6 +125,11 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryGreen,
           foregroundColor: Colors.white,
+          textStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.1,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -104,9 +148,41 @@ class AppTheme {
   }
 
   static ThemeData get darkTheme {
+    final baseText = ThemeData.dark(
+      useMaterial3: true,
+    ).textTheme.apply(fontFamily: 'Poppins');
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: 'Poppins',
+      textTheme: baseText.copyWith(
+        displayLarge: baseText.displayLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1.2,
+        ),
+        displayMedium: baseText.displayMedium?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.8,
+        ),
+        headlineLarge: baseText.headlineLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.6,
+        ),
+        headlineMedium: baseText.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+        ),
+        titleLarge: baseText.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+        ),
+        titleMedium: baseText.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        labelLarge: baseText.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryGreen,
         brightness: Brightness.dark,
@@ -120,6 +196,13 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+          color: Colors.white,
+        ),
       ),
       cardTheme: CardThemeData(
         elevation: 2,
@@ -153,6 +236,11 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryLight,
           foregroundColor: Colors.black,
+          textStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.1,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),

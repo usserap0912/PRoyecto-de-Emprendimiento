@@ -11,6 +11,7 @@ import 'package:safezone/services/permission_service.dart';
 import 'package:safezone/services/sos_service.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/theme/app_theme.dart';
+import 'package:safezone/widgets/safezone_logo_mark.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SosScreen extends StatefulWidget {
@@ -348,7 +349,14 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('S.O.S.'),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SafeZoneLogoMark(size: 26),
+            SizedBox(width: 10),
+            Text('S.O.S.'),
+          ],
+        ),
         backgroundColor: AppTheme.sosRed,
       ),
       body: DecoratedBox(
@@ -375,32 +383,41 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildIdle() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const Spacer(),
-          const Icon(Icons.shield_outlined, color: Colors.white, size: 48),
-          const SizedBox(height: 16),
-          const Text(
-            '¿Estás en peligro?',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              fontWeight: FontWeight.bold,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight > 48
+                  ? constraints.maxHeight - 48
+                  : 0,
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _isCountingDown
-                ? 'La alerta se activará en $_activationCountdown'
-                : _isPreparing
-                ? 'Preparando ubicación…'
-                : 'Mantén la calma. SafeZone compartirá tu ubicación solo durante 60 segundos.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 15),
-          ),
-          const Spacer(),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SafeZoneLogoMark(size: 92, showShadow: true),
+                const SizedBox(height: 18),
+                const Text(
+                  '¿Estás en peligro?',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isCountingDown
+                      ? 'La alerta se activará en $_activationCountdown'
+                      : _isPreparing
+                      ? 'Preparando ubicación…'
+                      : 'Mantén la calma. SafeZone compartirá tu ubicación solo durante 60 segundos.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 15),
+                ),
+                const SizedBox(height: 24),
           if (_isCountingDown)
             _CountdownButton(
               seconds: _activationCountdown,
@@ -450,12 +467,15 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          const Spacer(),
+          const SizedBox(height: 24),
           const _PrivacyNote(),
           const SizedBox(height: 12),
           _EmergencyContacts(onCall: _callEmergency),
-        ],
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

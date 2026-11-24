@@ -13,6 +13,7 @@ import 'package:safezone/widgets/emoji_reaction_picker.dart';
 import 'package:safezone/widgets/reaction_summary_bar.dart';
 import 'package:safezone/widgets/report_video_player.dart';
 import 'package:safezone/widgets/tag_badge.dart';
+import 'package:safezone/widgets/safezone_logo_mark.dart';
 import 'package:safezone/widgets/reaction_particles.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -205,11 +206,14 @@ class _WallScreenState extends State<WallScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shield, size: 24),
-            const SizedBox(width: 8),
+            const SafeZoneLogoMark(size: 30),
+            const SizedBox(width: 10),
             const Text(
               'SafeZone',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
             ),
           ],
         ),
@@ -395,12 +399,12 @@ class _TimeFilterChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         decoration: BoxDecoration(
           color: isActive
-              ? AppTheme.primaryGreen.withValues(alpha: 0.25)
+              ? Colors.white.withValues(alpha: 0.95)
               : Colors.white.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isActive
-                ? AppTheme.primaryGreen
+                ? Colors.white
                 : Colors.white.withValues(alpha: 0.3),
             width: isActive ? 2 : 1,
           ),
@@ -409,7 +413,7 @@ class _TimeFilterChip extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
             color: isActive ? AppTheme.primaryGreen : Colors.white,
           ),
         ),

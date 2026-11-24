@@ -10,7 +10,7 @@ import 'package:audioplayers/audioplayers.dart';
 //
 //   Navegación: nav_tap (click suave al cambiar tab)
 //               button_click (botones generales)
-//   SOS:        archivos MP3 definitivos para activación y recepción
+//   SOS:        WAV nuevos para activación y recepción
 //   Sistema:    welcome (entrada a la app)
 //               report_sent (reporte exitoso)
 // ============================================================
@@ -21,7 +21,7 @@ class SosAlarmCycleController {
   SosAlarmCycleController({
     required this.playOnce,
     required this.stopPlayback,
-    this.replayPause = const Duration(seconds: 3),
+    this.replayPause = const Duration(milliseconds: 1500),
   });
 
   final Future<bool> Function() playOnce;
@@ -86,8 +86,8 @@ class SosAlarmCycleController {
 
 /// Servicio de efectos de sonido para toda la app SafeZone.
 class SoundService {
-  static const String sosActivationAsset = 'sos/sos-activitation.mp3';
-  static const String sosReceivedAlertAsset = 'sos/sos-receiveddalert.mp3';
+  static const String sosActivationAsset = 'sos/sos-activitation.wav';
+  static const String sosReceivedAlertAsset = 'sos/sos-receivedalert.wav';
 
   static final SoundService _instance = SoundService._internal();
   factory SoundService() => _instance;
@@ -190,7 +190,7 @@ class SoundService {
     }
   }
 
-  /// Reproduce una sola vez el MP3 definitivo de activación.
+  /// Reproduce una sola vez el WAV definitivo de activación.
   Future<void> playSosActivation() async {
     await _playSosActivationOnce();
   }

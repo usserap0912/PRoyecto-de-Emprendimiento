@@ -6,6 +6,7 @@ import 'package:safezone/services/report_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/screens/wall/widgets/post_card.dart';
 import 'package:safezone/screens/stats/stats_screen.dart';
+import 'package:safezone/widgets/safezone_logo_mark.dart';
 import 'package:shimmer/shimmer.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -95,9 +96,15 @@ class _FeedScreenState extends State<FeedScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shield, size: 24),
-            const SizedBox(width: 8),
-            const Text('SafeZone', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SafeZoneLogoMark(size: 30),
+            const SizedBox(width: 10),
+            const Text(
+              'SafeZone',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
           ],
         ),
         actions: [

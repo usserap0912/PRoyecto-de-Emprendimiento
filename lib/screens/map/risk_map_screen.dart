@@ -15,6 +15,7 @@ import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/location_service.dart';
 import 'package:safezone/services/permission_service.dart';
+import 'package:safezone/services/report_service.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/services/sos_service.dart';
 import 'package:safezone/services/sos_realtime_service.dart';
@@ -47,8 +48,13 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   // Reportes en tiempo real vía stream de Supabase
   List<Map<String, dynamic>> _reports = [];
   StreamSubscription<List<Map<String, dynamic>>>? _reportsSubscription;
+  StreamSubscription<Report>? _createdReportSubscription;
   bool _isLoading = true;
   bool _streamError = false;
+  bool _hasLoadedReports = false;
+  Set<String> _blinkingReportIds = {};
+  Timer? _reportBlinkTimer;
+  Timer? _reportPollTimer;
 
   // Ubicación del usuario
   double? _userLat;
@@ -69,6 +75,10 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   late final AnimationController _userPulseController;
   late final Animation<double> _userPulseScale;
   late final Animation<double> _userPulseOpacity;
+
+  // Parpadeo de reportes nuevos (propios o de otros vecinos).
+  late final AnimationController _reportBlinkController;
+  late final Animation<double> _reportBlinkValue;
 
   // Colores discretos para las seis referencias territoriales con geometría.
   static final List<Color> _zoneColors = [
@@ -110,6 +120,15 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       CurvedAnimation(parent: _userPulseController, curve: Curves.easeOut),
     );
 
+    _reportBlinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _reportBlinkValue = CurvedAnimation(
+      parent: _reportBlinkController,
+      curve: Curves.easeInOut,
+    );
+
     // Arrancar/detener el parpadeo según el estado del S.O.S.
     _sosService.state.addListener(_onSosStateChanged);
     _sosService.localCoordinates.addListener(_onLocalSosLocationChanged);
@@ -118,6 +137,9 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 
     _loadTerritorialZones();
     _initReportsStream();
+    _createdReportSubscription = ReportService().createdReports.listen(
+      _onCreatedReport,
+    );
   }
 
   Future<void> _loadTerritorialZones() async {
@@ -215,9 +237,13 @@ class _RiskMapScreenState extends State<RiskMapScreen>
     _sosService.localCoordinates.removeListener(_onLocalSosLocationChanged);
     _sosRealtimeService.activeAlerts.removeListener(_onRemoteSosChanged);
     _reportsSubscription?.cancel();
+    _createdReportSubscription?.cancel();
     _positionSubscription?.cancel();
+    _reportBlinkTimer?.cancel();
+    _reportPollTimer?.cancel();
     _sosBlinkController.dispose();
     _userPulseController.dispose();
+    _reportBlinkController.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -396,28 +422,31 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   // SUPABASE: STREAM EN VIVO DE REPORTES
   // ================================================================
   void _initReportsStream() {
+    final sevenDaysAgo = DateTime.now()
+        .subtract(const Duration(days: 7))
+        .toIso8601String();
+
+    // Primero una lectura REST: así el mapa muestra los reportes aunque
+    // Realtime no esté habilitado en la tabla. Después el stream solo
+    // aporta las novedades para el parpadeo.
+    _loadReportsSnapshot(sevenDaysAgo);
+    // Respaldo por si Realtime está deshabilitado: cada 30 s se buscan
+    // reportes nuevos y se les aplica el parpadeo.
+    _reportPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _loadReportsSnapshot(sevenDaysAgo, allowBlink: true);
+    });
+
     try {
-      final sevenDaysAgo = DateTime.now()
-          .subtract(const Duration(days: 7))
-          .toIso8601String();
       _reportsSubscription = _supabase.client
           .from('reports')
           .stream(primaryKey: ['id'])
           .gte('created_at', sevenDaysAgo)
           .order('created_at', ascending: false)
           .listen(
-            (List<Map<String, dynamic>> data) {
-              if (mounted) {
-                setState(() {
-                  _reports = data;
-                  _isLoading = false;
-                  _streamError = false;
-                });
-              }
-            },
+            (List<Map<String, dynamic>> data) => _applyReports(data),
             onError: (Object error) {
               debugPrint('Error en stream de reportes: $error');
-              if (mounted) {
+              if (mounted && !_hasLoadedReports) {
                 setState(() {
                   _isLoading = false;
                   _streamError = true;
@@ -436,13 +465,88 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       });
     } catch (e) {
       debugPrint('Error iniciando stream de reportes: $e');
-      if (mounted) {
+      if (mounted && !_hasLoadedReports) {
         setState(() {
           _isLoading = false;
           _streamError = true;
         });
       }
     }
+  }
+
+  Future<void> _loadReportsSnapshot(
+    String since, {
+    bool allowBlink = false,
+  }) async {
+    try {
+      final response = await _supabase.client
+          .from('reports')
+          .select()
+          .gte('created_at', since)
+          .order('created_at', ascending: false)
+          .limit(200);
+      if (!mounted) return;
+      final data = (response as List)
+          .whereType<Map<String, dynamic>>()
+          .toList(growable: false);
+      _applyReports(data, allowBlink: allowBlink);
+    } catch (error) {
+      debugPrint('Error cargando informe inicial de reportes: $error');
+      if (mounted && !_hasLoadedReports) {
+        setState(() {
+          _isLoading = false;
+          _streamError = true;
+        });
+      }
+    }
+  }
+
+  /// Reporte propio recién enviado: se inserta de inmediato en el mapa y
+  /// parpadea aunque el stream de Supabase tarde o Realtime no esté activo.
+  void _onCreatedReport(Report report) {
+    if (report.latitude == null || report.longitude == null) return;
+    if (_reports.any((r) => r['id'] == report.id)) return;
+    _applyReports([report.toMap(), ..._reports]);
+  }
+
+  void _applyReports(
+    List<Map<String, dynamic>> data, {
+    bool allowBlink = true,
+  }) {
+    if (!mounted) return;
+    final previousIds = _reports
+        .map((r) => r['id'])
+        .whereType<String>()
+        .toSet();
+    final incomingIds = data
+        .map((r) => r['id'])
+        .whereType<String>()
+        .toSet();
+    final newIds = allowBlink && _hasLoadedReports
+        ? incomingIds.difference(previousIds)
+        : <String>{};
+
+    setState(() {
+      _reports = data;
+      _isLoading = false;
+      _streamError = false;
+      _hasLoadedReports = true;
+    });
+    if (newIds.isNotEmpty) _startReportBlink(newIds);
+  }
+
+  /// Hace parpadear los pines de los reportes recién llegados. Se detiene
+  /// solo después de unos segundos para no distraer permanentemente.
+  void _startReportBlink(Set<String> reportIds) {
+    _reportBlinkTimer?.cancel();
+    setState(() => _blinkingReportIds = {..._blinkingReportIds, ...reportIds});
+    _reportBlinkController.repeat(reverse: true);
+    _reportBlinkTimer = Timer(const Duration(seconds: 8), () {
+      if (!mounted) return;
+      _reportBlinkController.stop();
+      _reportBlinkController.value = 0;
+      setState(() => _blinkingReportIds.clear());
+    });
   }
 
   /// SnackBar informativo del toque en la propia ubicación.
@@ -476,6 +580,8 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       final lng = (report['lng'] ?? report['longitude']) as num?;
       if (lat == null || lng == null) continue;
       final category = report['category'] as String?;
+      final id = report['id'] as String? ?? '';
+      final color = _colorPorCategoria(category);
       markers.add(
         Marker(
           point: LatLng(lat.toDouble(), lng.toDouble()),
@@ -485,9 +591,15 @@ class _RiskMapScreenState extends State<RiskMapScreen>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _mostrarBottomSheet(report),
-            child: _BalloonPinMarker(
-              color: _colorPorCategoria(category),
+            child: _ReportPinMarker(
+              color: color,
               icon: _categoryIconFor(category ?? 'otros'),
+              iconColor: color.computeLuminance() > 0.6
+                  ? Colors.black87
+                  : Colors.white,
+              blink: _blinkingReportIds.contains(id)
+                  ? _reportBlinkValue
+                  : null,
             ),
           ),
         ),
@@ -523,12 +635,16 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       markers.add(
         Marker(
           point: LatLng(lat, lng),
-          width: 24,
-          height: 24,
+          width: 34,
+          height: 34,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _mostrarInfoPoi(poi),
-            child: _DotMarker(color: _colorForType(type), radius: 10),
+            child: _DotMarker(
+              color: _colorForType(type),
+              icon: _iconForType(type),
+              radius: 13,
+            ),
           ),
         ),
       );
@@ -590,13 +706,13 @@ class _RiskMapScreenState extends State<RiskMapScreen>
       case 'sos':
         return AppTheme.sosRed;
       case 'sospechoso':
-        return const Color(0xFFFFA500);
+        return const Color(0xFFFB8C00);
       case 'extorsion':
-        return const Color(0xFFFFA500);
+        return const Color(0xFF8E24AA);
       case 'alumbrado':
-        return const Color(0xFFFFFF00);
+        return const Color(0xFFF9A825);
       default:
-        return Colors.grey;
+        return const Color(0xFF546E7A);
     }
   }
 
@@ -1098,21 +1214,44 @@ class _RiskMapScreenState extends State<RiskMapScreen>
   }
 
   /// Abre Google Maps con la ruta hacia las coordenadas indicadas.
+  ///
+  /// Se intenta primero la app nativa con `geo:` y luego el enlace web.
+  /// No se usa `canLaunchUrl` para https porque en Android 11+ devuelve
+  /// false si falta la consulta de visibilidad, aunque el navegador exista.
   Future<void> _abrirGoogleMaps(double lat, double lng) async {
-    final uri = Uri.parse(
+    final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+    final webUri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=walking',
     );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo abrir Google Maps.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+
+    // El enlace web de indicaciones abre directamente la app de Google
+    // Maps (App Links) o el navegador. Es la ruta más fiable.
+    try {
+      final opened = await launchUrl(
+        webUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened) return;
+    } catch (_) {
+      // Continuar con el esquema nativo.
+    }
+
+    try {
+      final opened = await launchUrl(
+        geoUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened) return;
+      throw StateError('No se pudo abrir el enlace de mapas');
+    } catch (error) {
+      debugPrint('RiskMapScreen directions error: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir Google Maps.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -2050,7 +2189,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 // === LEYENDA DE CATEGORIAS ===
                 Positioned(
                   left: 12,
-                  bottom: 80,
+                  bottom: 72,
                   child: Card(
                     elevation: 4,
                     shape: RoundedRectangleBorder(
@@ -2076,14 +2215,21 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                           ),
                           _LegendItem(color: AppTheme.sosRed, label: 'S.O.S.'),
                           _LegendItem(
-                            color: const Color(0xFFFFA500),
+                            color: const Color(0xFFFB8C00),
                             label: 'Sospechoso',
                           ),
                           _LegendItem(
-                            color: const Color(0xFFFFFF00),
+                            color: const Color(0xFF8E24AA),
+                            label: 'Extorsión',
+                          ),
+                          _LegendItem(
+                            color: const Color(0xFFF9A825),
                             label: 'Alumbrado',
                           ),
-                          _LegendItem(color: Colors.grey, label: 'Otros'),
+                          _LegendItem(
+                            color: const Color(0xFF546E7A),
+                            label: 'Otros',
+                          ),
                         ],
                       ),
                     ),
@@ -2093,7 +2239,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 // === LEYENDA DE ANTIGÜEDAD ===
                 Positioned(
                   left: 12,
-                  bottom: 175,
+                  bottom: 205,
                   child: Card(
                     elevation: 4,
                     shape: RoundedRectangleBorder(
@@ -2142,7 +2288,7 @@ class _RiskMapScreenState extends State<RiskMapScreen>
                 // === BOTON ZONA SEGURA ===
                 Positioned(
                   left: 16,
-                  bottom: 300,
+                  bottom: 330,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -2316,8 +2462,13 @@ class _RiskMapScreenState extends State<RiskMapScreen>
 class _BalloonPinMarker extends StatelessWidget {
   final Color color;
   final IconData icon;
+  final Color iconColor;
 
-  const _BalloonPinMarker({required this.color, required this.icon});
+  const _BalloonPinMarker({
+    required this.color,
+    required this.icon,
+    this.iconColor = Colors.white,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2331,9 +2482,47 @@ class _BalloonPinMarker extends StatelessWidget {
             size: const Size(46, 56),
             painter: _BalloonPinPainter(color: color),
           ),
-          Positioned(top: 9, child: Icon(icon, color: Colors.white, size: 20)),
+          Positioned(top: 9, child: Icon(icon, color: iconColor, size: 20)),
         ],
       ),
+    );
+  }
+}
+
+/// Pin de reporte con parpadeo opcional cuando el reporte acaba de entrar.
+class _ReportPinMarker extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final Color iconColor;
+  final Animation<double>? blink;
+
+  const _ReportPinMarker({
+    required this.color,
+    required this.icon,
+    required this.iconColor,
+    this.blink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pin = _BalloonPinMarker(
+      color: color,
+      icon: icon,
+      iconColor: iconColor,
+    );
+    final animation = blink;
+    if (animation == null) return pin;
+
+    return AnimatedBuilder(
+      animation: animation,
+      child: pin,
+      builder: (context, child) {
+        final value = animation.value;
+        return Opacity(
+          opacity: 0.55 + value * 0.45,
+          child: Transform.scale(scale: 0.92 + value * 0.18, child: child),
+        );
+      },
     );
   }
 }
@@ -2357,10 +2546,23 @@ class _DotMarker extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: icon == null
             ? null
-            : Icon(icon, color: Colors.white, size: radius * 0.95),
+            : Icon(
+                icon,
+                color: color.computeLuminance() > 0.6
+                    ? Colors.black87
+                    : Colors.white,
+                size: radius * 0.95,
+              ),
       ),
     );
   }
