@@ -20,16 +20,41 @@ class ReactionSummaryBar extends StatelessWidget {
         .where((entry) => entry.value > 0)
         .toList();
     if (existing.isEmpty) {
-      return InkWell(
-        key: const ValueKey('empty_reaction_hint'),
-        onTap: onOpenPicker,
-        borderRadius: BorderRadius.circular(16),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: Text(
-            'Mantén presionado para reaccionar',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
-          ),
+      // Sin reacciones todavía: se ofrecen emojis visibles para que reaccionar
+      // sea posible con un toque, sin depender de una pulsación larga.
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final emoji in const <String>['❤️', '👍', '😮', '🙏'])
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: InkWell(
+                  key: ValueKey('quick_reaction_$emoji'),
+                  onTap: () => onReactionTap(emoji),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(emoji, style: const TextStyle(fontSize: 15)),
+                  ),
+                ),
+              ),
+            IconButton(
+              key: const ValueKey('open_emoji_picker'),
+              onPressed: onOpenPicker,
+              tooltip: 'Más reacciones',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.add_reaction_outlined, size: 18),
+            ),
+          ],
         ),
       );
     }

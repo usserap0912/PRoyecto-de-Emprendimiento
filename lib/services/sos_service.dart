@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:safezone/models/sos_session.dart';
+import 'package:safezone/services/push_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -44,7 +45,7 @@ class SupabaseSosGateway implements SosGateway {
     required SosCoordinates publicCoordinates,
   }) async {
     try {
-      return await _supabase
+      final result = await _supabase
           .publishSosAlert(
             activationId: activationId,
             userCode: userCode,
@@ -53,6 +54,17 @@ class SupabaseSosGateway implements SosGateway {
             longitude: publicCoordinates.longitude,
           )
           .timeout(operationTimeout);
+      // Avisar por push a los vecinos con la app cerrada. No bloquea ni
+      // puede hacer fallar el envío del S.O.S.
+      unawaited(
+        PushService().sendAlertPush(
+          type: 'sos',
+          alertId: result.alertId,
+          userCode: userCode,
+          zone: zone,
+        ),
+      );
+      return result;
     } catch (error, stackTrace) {
       throw _SosOperationError(
         operation: 'sos_alerts_and_reports.upsert',

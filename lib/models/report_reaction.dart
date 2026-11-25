@@ -71,6 +71,48 @@ class ReactionSummary {
   }
 
   static const empty = ReactionSummary(counts: <String, int>{});
+
+  /// Aplica localmente la reacción que el servidor confirmó, para que el
+  /// cambio sea visible aunque el canal en tiempo real no esté activo.
+  ReactionSummary withCurrentUserEmoji(String emoji) {
+    final totals = Map<String, int>.from(counts);
+    final previous = currentUserEmoji;
+    if (previous != null) _decrement(totals, previous);
+    totals.update(emoji, (count) => count + 1, ifAbsent: () => 1);
+    return ReactionSummary(
+      counts: _sortedByCount(totals),
+      currentUserEmoji: emoji,
+    );
+  }
+
+  /// Quita la reacción del usuario actual conservando las demás.
+  ReactionSummary withoutCurrentUserEmoji() {
+    final totals = Map<String, int>.from(counts);
+    final previous = currentUserEmoji;
+    if (previous != null) _decrement(totals, previous);
+    return ReactionSummary(
+      counts: _sortedByCount(totals),
+      currentUserEmoji: null,
+    );
+  }
+
+  static void _decrement(Map<String, int> totals, String emoji) {
+    final next = (totals[emoji] ?? 0) - 1;
+    if (next > 0) {
+      totals[emoji] = next;
+    } else {
+      totals.remove(emoji);
+    }
+  }
+
+  static Map<String, int> _sortedByCount(Map<String, int> totals) {
+    final sorted = totals.entries.toList()
+      ..sort((a, b) {
+        final countComparison = b.value.compareTo(a.value);
+        return countComparison != 0 ? countComparison : a.key.compareTo(b.key);
+      });
+    return UnmodifiableMapView(Map<String, int>.fromEntries(sorted));
+  }
 }
 
 enum ReactionMutationAction { set, removed }

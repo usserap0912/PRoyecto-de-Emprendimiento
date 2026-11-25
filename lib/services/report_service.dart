@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:safezone/models/comment_submission.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/models/report_comment.dart';
@@ -23,6 +24,11 @@ class SupabaseReportGateway implements ReportGateway {
     : _supabase = supabase ?? SupabaseService();
 
   static const Duration _operationTimeout = Duration(seconds: 15);
+
+  /// Un clip de 30 s puede pesar decenas de MB; 15 s no alcanzan para
+  /// subirlo con datos móviles.
+  static const Duration imageUploadTimeout = Duration(seconds: 45);
+  static const Duration videoUploadTimeout = Duration(minutes: 4);
   final SupabaseService _supabase;
 
   @override
@@ -40,7 +46,7 @@ class SupabaseReportGateway implements ReportGateway {
   Future<String?> uploadEvidence(String path, {required bool isVideo}) {
     return _supabase
         .uploadFile(path, isVideo: isVideo)
-        .timeout(_operationTimeout);
+        .timeout(isVideo ? videoUploadTimeout : imageUploadTimeout);
   }
 
   @override
@@ -66,6 +72,8 @@ abstract interface class WallInteractionGateway {
   });
 
   Stream<List<Map<String, dynamic>>> watchComments(String reportId);
+
+  Future<List<Map<String, dynamic>>> fetchComments(String reportId);
 
   Future<Map<String, dynamic>> insertComment({
     required String reportId,
@@ -154,6 +162,17 @@ class SupabaseWallInteractionGateway implements WallInteractionGateway {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchComments(String reportId) async {
+    final rows = await _supabase.client
+        .from('report_comments')
+        .select('id, report_id, user_code, comment_text, created_at')
+        .eq('report_id', reportId)
+        .order('created_at')
+        .timeout(_timeout);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  @override
   Future<Map<String, dynamic>> insertComment({
     required String reportId,
     required String userCode,
@@ -200,10 +219,11 @@ class ReportService {
     return filter.includes(report.createdAt, now: now);
   }
 
+  /// [filter] nulo significa "todos los reportes" (sin ventana temporal).
   static List<Report> mergeWallSnapshots(
     Iterable<Report> current,
     Iterable<Report> incoming, {
-    required WallTimeFilter filter,
+    WallTimeFilter? filter = WallTimeFilter.last7Days,
     DateTime? now,
   }) {
     final byId = <String, Report>{
@@ -212,18 +232,21 @@ class ReportService {
     for (final report in incoming) {
       byId[report.id] = report;
     }
-    return filter.filterAndSort(byId.values, now: now);
+    if (filter != null) return filter.filterAndSort(byId.values, now: now);
+    final all = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return all;
   }
 
   // ============================================================
   // CONSULTAS CON FILTRO TEMPORAL
   // ============================================================
 
-  /// Obtiene como máximo 50 publicaciones dentro de la ventana elegida.
-  /// El filtro se aplica en Supabase antes de descargar los registros.
+  /// Obtiene como máximo 50 publicaciones. Con [timeFilter] nulo se muestran
+  /// todas las publicaciones disponibles, sin ventana temporal.
   Future<List<Report>> getReports({
     int? zone,
-    WallTimeFilter timeFilter = WallTimeFilter.last7Days,
+    WallTimeFilter? timeFilter = WallTimeFilter.last7Days,
   }) async {
     try {
       var query = _supabase.client.from(_supabase.reportsTable).select();
@@ -232,10 +255,12 @@ class ReportService {
         query = query.eq('zone', zone);
       }
 
-      query = query.gte(
-        'created_at',
-        timeFilter.cutoff(DateTime.now()).toIso8601String(),
-      );
+      if (timeFilter != null) {
+        query = query.gte(
+          'created_at',
+          timeFilter.cutoff(DateTime.now()).toIso8601String(),
+        );
+      }
 
       final response = await query
           .order('created_at', ascending: false)
@@ -244,7 +269,8 @@ class ReportService {
       final reports = (response as List)
           .map((item) => Report.fromMap(item as Map<String, dynamic>))
           .toList();
-      return timeFilter.filterAndSort(reports);
+      if (timeFilter != null) return timeFilter.filterAndSort(reports);
+      return reports..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
       debugPrint('ReportService.getReports error: $e');
       rethrow;
@@ -262,7 +288,7 @@ class ReportService {
   /// Inicia la escucha en tiempo real usando .stream() de Supabase.
   void subscribeToRealtime({
     int? zone,
-    WallTimeFilter timeFilter = WallTimeFilter.last7Days,
+    WallTimeFilter? timeFilter = WallTimeFilter.last7Days,
     required void Function(List<Report> reports) onData,
     void Function(Object error)? onError,
   }) {
@@ -275,10 +301,12 @@ class ReportService {
 
       if (zone != null) query = query.eq('zone', zone);
 
-      query = query.gte(
-        'created_at',
-        timeFilter.cutoff(DateTime.now()).toIso8601String(),
-      );
+      if (timeFilter != null) {
+        query = query.gte(
+          'created_at',
+          timeFilter.cutoff(DateTime.now()).toIso8601String(),
+        );
+      }
 
       _realtimeSubscription =
           (query
@@ -287,9 +315,15 @@ class ReportService {
                       .map((maps) => maps.map((m) => Report.fromMap(m)))
                   as Stream)
               .listen(
-                (reports) => onData(
-                  timeFilter.filterAndSort(reports as Iterable<Report>),
-                ),
+                (reports) {
+                  final list = reports as List<Report>;
+                  if (timeFilter == null) {
+                    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                    onData(list);
+                    return;
+                  }
+                  onData(timeFilter.filterAndSort(list));
+                },
                 onError: (Object error) {
                   debugPrint('ReportService reports realtime error: $error');
                   onError?.call(error);
@@ -303,7 +337,7 @@ class ReportService {
   /// Actualiza la suscripción en tiempo real con un nuevo filtro
   void resubscribe({
     int? zone,
-    WallTimeFilter timeFilter = WallTimeFilter.last7Days,
+    WallTimeFilter? timeFilter = WallTimeFilter.last7Days,
     required void Function(List<Report> reports) onData,
     void Function(Object error)? onError,
   }) {
@@ -417,7 +451,38 @@ class ReportService {
     if (error is TimeoutException) {
       return const ReportSubmissionResult.failure(
         failure: ReportSubmissionFailure.timeout,
-        message: 'El servidor tardó demasiado. Intenta enviar nuevamente.',
+        message:
+            'La subida tardó demasiado. Revisa tu conexión e intenta enviar nuevamente.',
+      );
+    }
+    if (error is StorageException) {
+      final details = '${error.message} ${error.error ?? ''}'.toLowerCase();
+      final tooLarge =
+          error.statusCode == '413' ||
+          details.contains('too large') ||
+          details.contains('maximum allowed size') ||
+          details.contains('exceeded the maximum') ||
+          details.contains('payload too large');
+      if (tooLarge) {
+        return ReportSubmissionResult.failure(
+          failure: ReportSubmissionFailure.mediaTooLarge,
+          message:
+              'El video o la foto supera el tamaño máximo del servidor. Graba un clip más corto o envía solo una foto e intenta de nuevo.',
+          technicalCode: error.statusCode,
+        );
+      }
+      return ReportSubmissionResult.failure(
+        failure: ReportSubmissionFailure.mediaUpload,
+        message:
+            'El servidor no pudo guardar la evidencia. Intenta enviar nuevamente.',
+        technicalCode: error.statusCode,
+      );
+    }
+    if (error is http.ClientException) {
+      return const ReportSubmissionResult.failure(
+        failure: ReportSubmissionFailure.backendUnavailable,
+        message:
+            'Se cortó la conexión al enviar la evidencia. Intenta nuevamente.',
       );
     }
     if (error is PostgrestException) {
@@ -548,7 +613,9 @@ class ReportService {
       _logWallError('REACTION', 'toggle', error, stackTrace);
       final missingRpc =
           error is PostgrestException &&
-          (error.code == 'PGRST202' || error.code == '42883');
+          (error.code == 'PGRST202' ||
+              error.code == '42883' ||
+              error.code == 'PGRST116');
       return ReactionMutationResult.failure(
         missingRpc
             ? 'Las reacciones necesitan la migración del Muro.'
@@ -603,6 +670,21 @@ class ReportService {
   // ============================================================
   // COMENTARIOS
   // ============================================================
+
+  /// Lee una vez todos los comentarios existentes del reporte, incluidos los
+  /// de otros usuarios. Se usa junto al stream para garantizar que la lista
+  /// llegue completa aunque el canal en tiempo real tarde.
+  Future<List<ReportComment>> fetchComments(String reportId) async {
+    try {
+      final rows = await _wallGateway.fetchComments(reportId);
+      final comments = rows.map(ReportComment.fromMap).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return comments;
+    } catch (error, stackTrace) {
+      _logWallError('COMMENT', 'fetch', error, stackTrace);
+      rethrow;
+    }
+  }
 
   /// Obtiene los comentarios de un reporte en tiempo real
   Stream<List<ReportComment>> getCommentsStream(String reportId) {

@@ -371,41 +371,65 @@ class SupabaseService {
   // STORAGE (imágenes y videos)
   // ============================================================
 
-  /// Sube un archivo al Storage de Supabase y retorna la URL pública
+  /// Sube un archivo al Storage de Supabase y retorna la URL pública.
+  ///
+  /// Las excepciones de Storage se propagan para que la pantalla de reporte
+  /// pueda explicar la causa real (archivo grande, permiso, red).
   Future<String?> uploadFile(String filePath, {bool isVideo = false}) async {
-    try {
-      final bytes = await XFile(filePath).readAsBytes();
-      if (bytes.isEmpty) return null;
-      final rawExtension = filePath.split('.').last.toLowerCase();
-      final String ext =
-          rawExtension.length <= 5 &&
-              RegExp(r'^[a-z0-9]+$').hasMatch(rawExtension)
-          ? rawExtension
-          : isVideo
-          ? 'mp4'
-          : 'jpg';
-      final String fileName = '${const Uuid().v4()}.$ext';
-      final String folder = isVideo ? 'videos' : 'images';
-      final String storagePath = '$folder/$fileName';
-
-      await client.storage
-          .from(_storageBucket)
-          .uploadBinary(
-            storagePath,
-            bytes,
-            fileOptions: FileOptions(
-              contentType: isVideo ? 'video/$ext' : 'image/$ext',
-            ),
-          );
-
-      final publicUrl = client.storage
-          .from(_storageBucket)
-          .getPublicUrl(storagePath);
-      return publicUrl;
-    } catch (e) {
-      debugPrint('SupabaseService.uploadFile error: $e');
-      return null;
+    final bytes = await XFile(filePath).readAsBytes();
+    if (bytes.isEmpty) {
+      throw const StorageException(
+        'El archivo de evidencia está vacío.',
+        statusCode: '400',
+      );
     }
+
+    final rawExtension = filePath.split('.').last.toLowerCase();
+    final String ext =
+        rawExtension.length <= 5 && RegExp(r'^[a-z0-9]+$').hasMatch(rawExtension)
+        ? rawExtension
+        : isVideo
+        ? 'mp4'
+        : 'jpg';
+    final String fileName = '${const Uuid().v4()}.$ext';
+    final String folder = isVideo ? 'videos' : 'images';
+    final String storagePath = '$folder/$fileName';
+
+    await client.storage
+        .from(_storageBucket)
+        .uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: _contentTypeFor(ext, isVideo: isVideo),
+            cacheControl: '3600',
+          ),
+        );
+
+    final publicUrl = client.storage
+        .from(_storageBucket)
+        .getPublicUrl(storagePath);
+    return publicUrl;
+  }
+
+  /// El servidor rechaza un `contentType` inválido (p. ej. `video/mov`), así
+  /// que los formatos de cámara se traducen a su MIME real.
+  static String _contentTypeFor(String extension, {required bool isVideo}) {
+    return switch (extension) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'heif' => 'image/heif',
+      'gif' => 'image/gif',
+      'mp4' || 'm4v' => 'video/mp4',
+      'mov' => 'video/quicktime',
+      '3gp' || '3gpp' => 'video/3gpp',
+      'webm' => 'video/webm',
+      'mkv' => 'video/x-matroska',
+      'avi' => 'video/x-msvideo',
+      _ => isVideo ? 'video/mp4' : 'image/jpeg',
+    };
   }
 
   // ============================================================

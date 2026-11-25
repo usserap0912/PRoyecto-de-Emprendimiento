@@ -781,3 +781,40 @@ SELECT archive_old_reports() AS prueba_rapida;
 
 -- Recarga la caché de Supabase para que la app vea las funciones nuevas
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- 8) PUSH NOTIFICATIONS (Firebase Cloud Messaging)
+-- ============================================================
+-- Guarda el token de cada teléfono para avisarle de un S.O.S. o de un
+-- reporte aunque la app esté CERRADA. La Edge Function "send-push" lee
+-- estos tokens con service_role y envía el aviso por Firebase.
+CREATE TABLE IF NOT EXISTS device_tokens (
+  token TEXT PRIMARY KEY,
+  user_code TEXT NOT NULL REFERENCES profiles(user_code) ON DELETE CASCADE,
+  zone INTEGER,
+  platform TEXT DEFAULT 'android',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user_code ON device_tokens(user_code);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_zone ON device_tokens(zone);
+
+ALTER TABLE device_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Device tokens legibles por cualquiera" ON device_tokens;
+DROP POLICY IF EXISTS "Device tokens insertable por cualquiera" ON device_tokens;
+DROP POLICY IF EXISTS "Device tokens actualizable por cualquiera" ON device_tokens;
+DROP POLICY IF EXISTS "Device tokens eliminable por cualquiera" ON device_tokens;
+
+-- La app usa la anon key (sin login), igual que el resto de tablas.
+CREATE POLICY "Device tokens legibles por cualquiera" ON device_tokens
+  FOR SELECT USING (true);
+CREATE POLICY "Device tokens insertable por cualquiera" ON device_tokens
+  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Device tokens actualizable por cualquiera" ON device_tokens
+  FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Device tokens eliminable por cualquiera" ON device_tokens
+  FOR DELETE USING (true);
+
+NOTIFY pgrst, 'reload schema';

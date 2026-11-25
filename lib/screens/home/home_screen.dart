@@ -18,6 +18,7 @@ import 'package:safezone/services/report_service.dart';
 import 'package:safezone/widgets/animated_nav_icon.dart';
 import 'package:safezone/models/sos_alert.dart';
 import 'package:safezone/services/sos_realtime_service.dart';
+import 'package:safezone/services/push_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userCode;
@@ -59,6 +60,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _notificationService.initialize();
     _sosRealtimeService.incomingAlert.addListener(_onIncomingSosAlert);
     _sosRealtimeService.start(currentUserCode: widget.userCode);
+
+    // Asociar este teléfono al usuario para recibir avisos con la app cerrada.
+    unawaited(
+      PushService().register(userCode: widget.userCode, zone: widget.zone),
+    );
 
     _screens = [
       WallScreen(userCode: widget.userCode, zone: widget.zone),

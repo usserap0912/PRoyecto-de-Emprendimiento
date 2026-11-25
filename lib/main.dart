@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:safezone/app.dart';
 import 'package:safezone/services/power_saver_service.dart';
+import 'package:safezone/services/push_service.dart';
 import 'package:safezone/services/supabase_service.dart';
 
 void main() async {
@@ -19,6 +20,10 @@ void main() async {
   } catch (e) {
     debugPrint('Supabase no disponible - modo offline');
   }
+
+  // Firebase Cloud Messaging: avisos con la app cerrada. Si no está
+  // configurado, la app sigue funcionando con el realtime normal.
+  await PushService().initialize();
 
   runApp(const SafeZoneApp());
 }

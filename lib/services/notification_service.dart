@@ -17,6 +17,11 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
+  /// Canal de máxima prioridad usado también por las notificaciones push
+  /// (la Edge Function envía este channel_id a Firebase).
+  static const String sosChannelId = 'safezone_sos_v2';
+  static const String alertsChannelId = 'safezone_alerts';
+
   bool _initialized = false;
 
   /// Inicializa el plugin de notificaciones.
@@ -45,6 +50,11 @@ class NotificationService {
 
       await _plugin.initialize(initSettings);
 
+      final androidImplementation = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+
       // Crear canal para alertas de seguridad
       const androidChannel = AndroidNotificationChannel(
         'safezone_alerts',
@@ -55,11 +65,33 @@ class NotificationService {
         enableVibration: true,
       );
 
+      // Canal exclusivo del S.O.S.: máxima prioridad y la alarma MP3 real
+      // (res/raw/alarma_recepcion.mp3) para que suene y vibre aunque el
+      // celular esté bloqueado o la app cerrada. El id lleva sufijo _v2
+      // porque Android no permite cambiar el sonido de un canal existente.
+      final sosChannel = AndroidNotificationChannel(
+        sosChannelId,
+        'Alertas S.O.S. de SafeZone',
+        description: 'Avisos urgentes de vecinos que activaron el S.O.S.',
+        importance: Importance.max,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('alarma_recepcion'),
+        enableVibration: true,
+        enableLights: true,
+        vibrationPattern: Int64List.fromList(<int>[0, 800, 400, 800, 400, 800]),
+      );
+
+      await androidImplementation?.createNotificationChannel(androidChannel);
+      await androidImplementation?.createNotificationChannel(sosChannel);
+
+      // Android 13+ exige autorización explícita; sin ella las
+      // notificaciones locales nunca se muestran.
+      await androidImplementation?.requestNotificationsPermission();
       await _plugin
           .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
+            IOSFlutterLocalNotificationsPlugin
           >()
-          ?.createNotificationChannel(androidChannel);
+          ?.requestPermissions(alert: true, badge: true, sound: true);
 
       _initialized = true;
       debugPrint('NotificationService: Inicializado correctamente');
@@ -74,6 +106,7 @@ class NotificationService {
     required String title,
     required String body,
     String? payload,
+    bool critical = false,
   }) async {
     if (kIsWeb || !_initialized) return;
 
@@ -85,12 +118,21 @@ class NotificationService {
         ..[3] = 500;
 
       final androidDetails = AndroidNotificationDetails(
-        'safezone_alerts',
-        'Alertas de SafeZone',
-        channelDescription: 'Reportes de seguridad y alertas vecinales',
-        importance: Importance.high,
-        priority: Priority.high,
+        critical ? sosChannelId : alertsChannelId,
+        critical ? 'Alertas S.O.S. de SafeZone' : 'Alertas de SafeZone',
+        channelDescription: critical
+            ? 'Avisos urgentes de vecinos que activaron el S.O.S.'
+            : 'Reportes de seguridad y alertas vecinales',
+        importance: critical ? Importance.max : Importance.high,
+        priority: critical ? Priority.max : Priority.high,
+        category: critical
+            ? AndroidNotificationCategory.alarm
+            : AndroidNotificationCategory.message,
+        visibility: NotificationVisibility.public,
         icon: '@mipmap/ic_launcher',
+        sound: critical
+            ? const RawResourceAndroidNotificationSound('alarma_recepcion')
+            : null,
         enableVibration: true,
         playSound: true,
         showWhen: true,
@@ -151,6 +193,7 @@ class NotificationService {
       title: title,
       body: body,
       payload: 'sos_$userCode',
+      critical: true,
     );
   }
 }

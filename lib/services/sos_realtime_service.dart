@@ -118,6 +118,11 @@ class SosRealtimeService {
     return _processSnapshot(rows, currentUserCode: currentUserCode, now: now);
   }
 
+  /// ¿Esta alerta ya fue avisada por el realtime?
+  /// Lo usa PushService para no duplicar alarma y notificación.
+  bool wasRecentlyNotified(String alertId) =>
+      _notifiedAlertIds.contains(alertId);
+
   void _prepareNotificationOwner(String currentUserCode) {
     if (_notificationOwnerUserCode == currentUserCode) return;
     _notificationOwnerUserCode = currentUserCode;

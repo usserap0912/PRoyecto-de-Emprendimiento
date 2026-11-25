@@ -104,6 +104,11 @@ class _FakeWallGateway implements WallInteractionGateway {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchComments(String reportId) async {
+    return comments.where((row) => row['report_id'] == reportId).toList();
+  }
+
+  @override
   Stream<List<Map<String, dynamic>>> watchComments(String reportId) async* {
     yield comments.where((row) => row['report_id'] == reportId).toList();
     yield* _commentController.stream;

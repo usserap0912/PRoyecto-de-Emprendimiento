@@ -10,6 +10,7 @@ import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/services/supabase_service.dart';
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/services/location_service.dart';
+import 'package:safezone/services/push_service.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/services/permission_service.dart';
 
@@ -39,6 +40,10 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   final ImagePicker _picker = ImagePicker();
   final PermissionService _permissionService = PermissionService();
   late final ReportService _reportService;
+
+  /// Límite por archivo del bucket de Storage; avisar antes de subir evita
+  /// que el envío falle a mitad de la carga.
+  static const int _maxVideoBytes = 50 * 1024 * 1024;
 
   String? _selectedCategory;
   String? _selectedTag;
@@ -102,7 +107,24 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
         source: source,
         maxDuration: const Duration(seconds: 30),
       );
-      if (video != null && mounted) setState(() => _videoPath = video.path);
+      if (video == null || !mounted) return;
+
+      final size = await video.length();
+      if (size > _maxVideoBytes) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'El video pesa ${(size / (1024 * 1024)).toStringAsFixed(1)} MB. '
+                'El máximo es 50 MB: graba un clip más corto o envíalo sin video.',
+              ),
+              backgroundColor: AppTheme.warningYellow,
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _videoPath = video.path);
     } catch (e) {
       debugPrint('ReportFormScreen video picker error: $e');
     }
@@ -309,6 +331,20 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     }
 
     unawaited(SoundService().play('report_sent'));
+
+    // Avisar por push a los vecinos de la zona que tienen la app cerrada.
+    final reportId = result.report?.id;
+    if (reportId != null) {
+      unawaited(
+        PushService().sendAlertPush(
+          type: 'report',
+          alertId: reportId,
+          userCode: widget.userCode,
+          zone: widget.zone,
+          category: _selectedCategory,
+        ),
+      );
+    }
 
     setState(() {
       _isSubmitting = false;

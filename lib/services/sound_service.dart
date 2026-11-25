@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 // ============================================================
@@ -10,101 +11,26 @@ import 'package:audioplayers/audioplayers.dart';
 //
 //   Navegación: nav_tap (click suave al cambiar tab)
 //               button_click (botones generales)
-//   SOS:        WAV nuevos para activación y recepción
+//   SOS:        MP3 de activación (bucle continuo) y recepción, a volumen
+//               máximo por el canal de alarmas, con vibración del celular
 //   Sistema:    welcome (entrada a la app)
 //               report_sent (reporte exitoso)
 // ============================================================
 
-/// Coordinates separated SOS alarm plays without using a continuous audio
-/// loop. A new play is scheduled only after the previous one completes.
-class SosAlarmCycleController {
-  SosAlarmCycleController({
-    required this.playOnce,
-    required this.stopPlayback,
-    this.replayPause = const Duration(milliseconds: 1500),
-  });
-
-  final Future<bool> Function() playOnce;
-  final Future<void> Function() stopPlayback;
-  final Duration replayPause;
-
-  Timer? _replayTimer;
-  bool _isActive = false;
-  bool _playInFlight = false;
-  int _generation = 0;
-
-  bool get isActive => _isActive;
-
-  @visibleForTesting
-  bool get hasScheduledReplay => _replayTimer?.isActive ?? false;
-
-  Future<void> start() async {
-    if (_isActive) return;
-    _isActive = true;
-    final generation = ++_generation;
-    await _play(generation);
-  }
-
-  void playbackCompleted() {
-    if (!_isActive) return;
-    _scheduleReplay(_generation);
-  }
-
-  Future<void> stop() async {
-    if (!_isActive && _replayTimer == null && !_playInFlight) return;
-    _isActive = false;
-    _generation++;
-    _replayTimer?.cancel();
-    _replayTimer = null;
-    await stopPlayback();
-  }
-
-  Future<void> _play(int generation) async {
-    if (!_isActive || generation != _generation || _playInFlight) return;
-    _playInFlight = true;
-    final didStart = await playOnce();
-    _playInFlight = false;
-
-    if (!_isActive || generation != _generation) {
-      await stopPlayback();
-      return;
-    }
-    if (!didStart) _scheduleReplay(generation);
-  }
-
-  void _scheduleReplay(int generation) {
-    if (!_isActive || generation != _generation) return;
-    _replayTimer?.cancel();
-    _replayTimer = Timer(replayPause, () {
-      _replayTimer = null;
-      unawaited(_play(generation));
-    });
-  }
-
-  Future<void> dispose() => stop();
-}
-
 /// Servicio de efectos de sonido para toda la app SafeZone.
 class SoundService {
-  static const String sosActivationAsset = 'sos/sos-activitation.wav';
-  static const String sosReceivedAlertAsset = 'sos/sos-receivedalert.wav';
+  static const String sosActivationAsset = 'sos/alarma-activacion.mp3';
+  static const String sosReceivedAlertAsset = 'sos/alarma-recepcion.mp3';
 
   static final SoundService _instance = SoundService._internal();
   factory SoundService() => _instance;
-  SoundService._internal() {
-    _sosAlarmCycle = SosAlarmCycleController(
-      playOnce: _playSosActivationOnce,
-      stopPlayback: _stopSosActivationPlayer,
-    );
-    _sosCompletionSubscription = _sosActivationPlayer.onPlayerComplete.listen(
-      (_) => _sosAlarmCycle.playbackCompleted(),
-    );
-  }
+  SoundService._internal();
 
   final AudioPlayer _player = AudioPlayer();
   final AudioPlayer _sosActivationPlayer = AudioPlayer();
-  late final SosAlarmCycleController _sosAlarmCycle;
-  StreamSubscription<void>? _sosCompletionSubscription;
+  final AudioPlayer _sosReceivedPlayer = AudioPlayer();
+  Timer? _alarmVibrationTimer;
+  bool _alarmLoopActive = false;
   bool _isMuted = false;
 
   // WAV sintetizados en memoria
@@ -140,7 +66,6 @@ class SoundService {
     _isMuted = value;
     if (value) {
       _player.stop();
-      unawaited(stopSosActivationAlarm());
     }
   }
 
@@ -190,40 +115,56 @@ class SoundService {
     }
   }
 
-  /// Reproduce una sola vez el WAV definitivo de activación.
+  /// Reproduce una sola vez el sonido de activación.
   Future<void> playSosActivation() async {
     await _playSosActivationOnce();
   }
 
-  /// Inicia una única secuencia de alarma personal. Cada repetición comienza
-  /// tres segundos después de que termine la reproducción anterior.
-  Future<void> startSosActivationAlarm() => _sosAlarmCycle.start();
+  /// Inicia la alarma personal en bucle continuo (sin pausas) hasta que se
+  /// detenga. El audio usa el canal de alarmas del dispositivo y vibra el
+  /// celular mientras la alerta permanezca activa, incluso en segundo plano.
+  Future<void> startSosActivationAlarm() async {
+    if (_alarmLoopActive) return;
+    _alarmLoopActive = true;
+    final started = await _playSosActivationOnce(loop: true);
+    if (!started) {
+      // Si el audio está bloqueado, la vibración igual mantiene el aviso.
+      if (kDebugMode) {
+        debugPrint('SoundService: alarma S.O.S. sin audio, solo vibración');
+      }
+    }
+    _startAlarmVibration();
+  }
 
-  /// Detiene inmediatamente la reproducción actual y cualquier repetición.
-  Future<void> stopSosActivationAlarm() => _sosAlarmCycle.stop();
+  /// Detiene inmediatamente el bucle y la vibración.
+  Future<void> stopSosActivationAlarm() async {
+    _alarmLoopActive = false;
+    _stopAlarmVibration();
+    await _stopSosActivationPlayer();
+  }
 
   /// Reproduce una sola vez el aviso que reciben los demás usuarios.
   Future<void> playSosReceivedAlert() async {
-    if (_isMuted) return;
     try {
-      await _player.stop();
-      await _player.setReleaseMode(ReleaseMode.stop);
-      await _player.setVolume(1.0);
-      await _player.play(AssetSource(sosReceivedAlertAsset));
+      await _sosReceivedPlayer.stop();
+      await _configureAlarmPlayer(_sosReceivedPlayer);
+      await _sosReceivedPlayer.play(AssetSource(sosReceivedAlertAsset));
     } catch (error, stackTrace) {
       if (kDebugMode) {
         debugPrint('SoundService: recepción S.O.S. bloqueada: $error');
         debugPrintStack(stackTrace: stackTrace);
       }
     }
+    _vibrateIncomingAlert();
   }
 
-  Future<bool> _playSosActivationOnce() async {
-    if (_isMuted) return false;
+  Future<bool> _playSosActivationOnce({bool loop = false}) async {
     try {
       await _sosActivationPlayer.stop();
-      await _sosActivationPlayer.setReleaseMode(ReleaseMode.stop);
-      await _sosActivationPlayer.setVolume(1.0);
+      await _configureAlarmPlayer(
+        _sosActivationPlayer,
+        releaseMode: loop ? ReleaseMode.loop : ReleaseMode.stop,
+      );
       await _sosActivationPlayer.play(AssetSource(sosActivationAsset));
       return true;
     } catch (error, stackTrace) {
@@ -232,6 +173,53 @@ class SoundService {
         debugPrintStack(stackTrace: stackTrace);
       }
       return false;
+    }
+  }
+
+  /// Configura el reproductor para que use el canal de alarmas a volumen
+  /// máximo y siga sonando con la pantalla apagada.
+  Future<void> _configureAlarmPlayer(
+    AudioPlayer player, {
+    ReleaseMode releaseMode = ReleaseMode.stop,
+  }) async {
+    await player.setAudioContext(
+      AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: true,
+          stayAwake: true,
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.alarm,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: const {AVAudioSessionOptions.duckOthers},
+        ),
+      ),
+    );
+    await player.setReleaseMode(releaseMode);
+    await player.setVolume(1.0);
+  }
+
+  void _startAlarmVibration() {
+    _alarmVibrationTimer?.cancel();
+    _vibrateIncomingAlert();
+    _alarmVibrationTimer = Timer.periodic(
+      const Duration(milliseconds: 900),
+      (_) => _vibrateIncomingAlert(),
+    );
+  }
+
+  void _stopAlarmVibration() {
+    _alarmVibrationTimer?.cancel();
+    _alarmVibrationTimer = null;
+  }
+
+  void _vibrateIncomingAlert() {
+    try {
+      unawaited(HapticFeedback.vibrate());
+    } catch (_) {
+      // Web y dispositivos sin vibración siguen funcionando.
     }
   }
 
@@ -246,7 +234,7 @@ class SoundService {
     }
   }
 
-  /// API heredada: conserva compatibilidad, pero ya no usa audio en loop.
+  /// API heredada: conserva compatibilidad con el bucle continuo.
   @Deprecated('Usa startSosActivationAlarm().')
   Future<void> playLoopingSosAlarm() async {
     await startSosActivationAlarm();
@@ -267,10 +255,9 @@ class SoundService {
 
   @visibleForTesting
   Future<void> dispose() async {
-    await _sosAlarmCycle.dispose();
-    await _sosCompletionSubscription?.cancel();
-    _sosCompletionSubscription = null;
+    _stopAlarmVibration();
     await _sosActivationPlayer.dispose();
+    await _sosReceivedPlayer.dispose();
     await _player.dispose();
   }
 

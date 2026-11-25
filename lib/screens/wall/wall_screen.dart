@@ -6,7 +6,7 @@ import 'package:safezone/theme/app_theme.dart';
 import 'package:safezone/models/report.dart';
 import 'package:safezone/models/report_comment.dart';
 import 'package:safezone/models/report_reaction.dart';
-import 'package:safezone/models/wall_time_filter.dart';
+import 'package:safezone/models/wall_time_filter.dart' show wallResultLabel;
 import 'package:safezone/services/report_service.dart';
 import 'package:safezone/services/sound_service.dart';
 import 'package:safezone/widgets/emoji_reaction_picker.dart';
@@ -33,17 +33,12 @@ class _WallScreenState extends State<WallScreen> {
   bool _isLoading = true;
   int _previousReportCount = 0;
   StreamSubscription<Report>? _createdReportSubscription;
-  WallTimeFilter _activeTimeFilter = WallTimeFilter.last6Hours;
   Object? _loadError;
   int _loadGeneration = 0;
-  Timer? _expirationTimer;
 
+  /// El Muro muestra todos los reportes disponibles, sin filtros de tiempo.
   List<Report> _mergeReports(Iterable<Report> incoming) {
-    return ReportService.mergeWallSnapshots(
-      _reports,
-      incoming,
-      filter: _activeTimeFilter,
-    );
+    return ReportService.mergeWallSnapshots(_reports, incoming, filter: null);
   }
 
   @override
@@ -69,9 +64,7 @@ class _WallScreenState extends State<WallScreen> {
       _loadError = null;
     });
     try {
-      final reports = await _reportService.getReports(
-        timeFilter: _activeTimeFilter,
-      );
+      final reports = await _reportService.getReports(timeFilter: null);
       if (kDebugMode) debugPrint('[WALL][initial] count=${reports.length}');
       if (mounted && generation == _loadGeneration) {
         setState(() {
@@ -79,7 +72,6 @@ class _WallScreenState extends State<WallScreen> {
           _previousReportCount = _reports.length;
           _isLoading = false;
         });
-        _scheduleNextExpiration();
       }
     } catch (error) {
       if (mounted && generation == _loadGeneration) {
@@ -95,7 +87,7 @@ class _WallScreenState extends State<WallScreen> {
   /// Reproduce sonido cuando llega un nuevo reporte
   void _subscribeToRealtime() {
     _reportService.subscribeToRealtime(
-      timeFilter: _activeTimeFilter,
+      timeFilter: null,
       onData: (reports) {
         if (mounted) {
           final knownIds = _reports.map((report) => report.id).toSet();
@@ -124,7 +116,6 @@ class _WallScreenState extends State<WallScreen> {
           if (kDebugMode) {
             debugPrint('[WALL][merged] count=${_reports.length}');
           }
-          _scheduleNextExpiration();
         }
       },
       onError: (error) {
@@ -134,66 +125,18 @@ class _WallScreenState extends State<WallScreen> {
   }
 
   void _onReportCreated(Report report) {
-    if (!mounted || report.zone != widget.zone) return;
-    if (!_activeTimeFilter.includes(report.createdAt)) return;
+    if (!mounted) return;
     if (_reports.any((existing) => existing.id == report.id)) return;
     setState(() {
-      _reports = _activeTimeFilter.filterAndSort([report, ..._reports]);
+      _reports = _mergeReports([report, ..._reports]);
       _previousReportCount = _reports.length;
       _isLoading = false;
-    });
-    _scheduleNextExpiration();
-  }
-
-  /// Cambia el filtro temporal y recarga
-  Future<void> _setTimeFilter(WallTimeFilter filter) async {
-    if (_activeTimeFilter == filter) return;
-    setState(() => _activeTimeFilter = filter);
-    await _loadReports();
-    if (!mounted) return;
-    _reportService.resubscribe(
-      timeFilter: filter,
-      onData: (reports) {
-        if (!mounted) return;
-        setState(() {
-          _reports = _mergeReports(reports);
-          _previousReportCount = _reports.length;
-          _isLoading = false;
-          _loadError = null;
-        });
-        _scheduleNextExpiration();
-      },
-      onError: (error) {
-        if (mounted && _reports.isEmpty) setState(() => _loadError = error);
-      },
-    );
-  }
-
-  void _scheduleNextExpiration() {
-    _expirationTimer?.cancel();
-    if (_reports.isEmpty) return;
-    var delay = _activeTimeFilter.nextExpirationDelay(_reports);
-    if (delay == null) return;
-    if (delay < const Duration(milliseconds: 100)) {
-      delay = const Duration(milliseconds: 100);
-    } else if (delay > _activeTimeFilter.duration) {
-      delay = _activeTimeFilter.duration;
-    }
-    _expirationTimer = Timer(delay, () {
-      if (!mounted) return;
-      final visible = _activeTimeFilter.filterAndSort(_reports);
-      setState(() {
-        _reports = visible;
-        _previousReportCount = visible.length;
-      });
-      _scheduleNextExpiration();
     });
   }
 
   @override
   void dispose() {
     _createdReportSubscription?.cancel();
-    _expirationTimer?.cancel();
     _reportService.unsubscribeFromRealtime();
     super.dispose();
   }
@@ -238,10 +181,6 @@ class _WallScreenState extends State<WallScreen> {
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: _buildTimeFilterBar(),
-        ),
       ),
       body: _isLoading
           ? _buildShimmer()
@@ -276,30 +215,6 @@ class _WallScreenState extends State<WallScreen> {
                 },
               ),
             ),
-    );
-  }
-
-  /// Barra de filtros temporales
-  Widget _buildTimeFilterBar() {
-    return Container(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            for (final filter in WallTimeFilter.values)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _TimeFilterChip(
-                  label: filter.label,
-                  isActive: _activeTimeFilter == filter,
-                  onTap: () => _setTimeFilter(filter),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -361,7 +276,7 @@ class WallEmptyState extends StatelessWidget {
           Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
-            'No hay alertas en este periodo.',
+            'No hay alertas en el Muro.',
             style: TextStyle(fontSize: 16, color: Colors.grey[500]),
           ),
           const SizedBox(height: 8),
@@ -370,53 +285,6 @@ class WallEmptyState extends StatelessWidget {
             style: TextStyle(fontSize: 13, color: Colors.grey[400]),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// CHIP DE FILTRO TEMPORAL
-// ============================================================
-
-class _TimeFilterChip extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _TimeFilterChip({
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive
-              ? Colors.white.withValues(alpha: 0.95)
-              : Colors.white.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.3),
-            width: isActive ? 2 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-            color: isActive ? AppTheme.primaryGreen : Colors.white,
-          ),
-        ),
       ),
     );
   }
@@ -489,6 +357,13 @@ class _ReportCardState extends State<_ReportCard> {
       ).showSnackBar(SnackBar(content: Text(result.message!)));
       return;
     }
+    // Refleja de inmediato la reacción confirmada; el stream en tiempo real
+    // solo reconcilia los conteos de los demás usuarios.
+    setState(() {
+      _reactionSummary = result.action == ReactionMutationAction.removed
+          ? _reactionSummary.withoutCurrentUserEmoji()
+          : _reactionSummary.withCurrentUserEmoji(emoji);
+    });
     if (result.action == ReactionMutationAction.set) {
       _showReactionParticles();
     }
@@ -932,31 +807,50 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void initState() {
     super.initState();
+    _loadComments();
     _subscribeToComments();
+  }
+
+  /// Combina la lista existente con la nueva sin perder comentarios de otros
+  /// usuarios ni duplicar los que llegan por tiempo real.
+  void _mergeComments(Iterable<ReportComment> incoming) {
+    final byId = <String, ReportComment>{
+      for (final comment in _comments) comment.id: comment,
+    };
+    for (final comment in incoming) {
+      byId[comment.id] = comment;
+    }
+    final merged = byId.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (mounted) {
+      setState(() {
+        _comments = merged;
+        _streamError = null;
+      });
+    }
+  }
+
+  Future<void> _loadComments() async {
+    try {
+      final comments = await _reportService.fetchComments(widget.reportId);
+      _mergeComments(comments);
+    } catch (error) {
+      debugPrint('WallScreen comments load error: $error');
+    }
   }
 
   void _subscribeToComments() {
     _commentsSubscription = _reportService
         .getCommentsStream(widget.reportId)
-        .listen(
-          (comments) {
-            if (mounted) {
-              setState(() {
-                _comments = comments;
-                _streamError = null;
-              });
-            }
-          },
-          onError: (Object error) {
-            debugPrint('WallScreen comments realtime error: $error');
-            if (mounted) {
-              setState(() {
-                _streamError =
-                    'No pudimos actualizar los comentarios en tiempo real.';
-              });
-            }
-          },
-        );
+        .listen(_mergeComments, onError: (Object error) {
+          debugPrint('WallScreen comments realtime error: $error');
+          if (mounted) {
+            setState(() {
+              _streamError =
+                  'No pudimos actualizar los comentarios en tiempo real.';
+            });
+          }
+        });
   }
 
   Future<void> _sendComment() async {
@@ -972,13 +866,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     if (mounted) {
       if (result.isSuccess) {
         final comment = result.comment!;
-        setState(() {
-          _isSending = false;
-          if (!_comments.any((existing) => existing.id == comment.id)) {
-            _comments = [..._comments, comment]
-              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-          }
-        });
+        _mergeComments([comment]);
+        setState(() => _isSending = false);
         _textController.clear();
         _focusNode.unfocus();
       } else {
@@ -1068,6 +957,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   TextButton(
                     onPressed: () {
                       _commentsSubscription?.cancel();
+                      _loadComments();
                       _subscribeToComments();
                     },
                     child: const Text('Reintentar'),

@@ -50,6 +50,7 @@ enum ReportSubmissionFailure {
   invalidZone,
   missingProfile,
   mediaUpload,
+  mediaTooLarge,
   authentication,
   rejected,
   schema,

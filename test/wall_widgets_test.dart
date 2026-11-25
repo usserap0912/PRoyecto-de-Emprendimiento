@@ -12,14 +12,14 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: WallEmptyState())),
     );
-    expect(find.text('No hay alertas en este periodo.'), findsOneWidget);
+    expect(find.text('No hay alertas en el Muro.'), findsOneWidget);
     expect(
       find.text('Las publicaciones aparecerán aquí en tiempo real.'),
       findsOneWidget,
     );
   });
 
-  testWidgets('zero-count emojis are hidden and an empty hint is shown', (
+  testWidgets('zero-count emojis are hidden and quick reactions are offered', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -39,18 +39,21 @@ void main() {
     expect(find.text('❤️ 2'), findsOneWidget);
     expect(find.text('😮 0'), findsNothing);
 
+    String? quickReaction;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: ReactionSummaryBar(
             summary: ReactionSummary.empty,
-            onReactionTap: (_) {},
+            onReactionTap: (emoji) => quickReaction = emoji,
             onOpenPicker: () {},
           ),
         ),
       ),
     );
-    expect(find.text('Mantén presionado para reaccionar'), findsOneWidget);
+    expect(find.byKey(const ValueKey('quick_reaction_❤️')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('quick_reaction_❤️')));
+    expect(quickReaction, '❤️');
   });
 
   testWidgets(

@@ -46,6 +46,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 🔔 FIREBASE CLOUD MESSAGING
+             Canal por defecto de los avisos que llegan con la app cerrada.
+             El S.O.S. se envía con canal propio (safezone_sos_v2) desde el
+             servidor, así que este solo cubre reportes normales. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="safezone_alerts" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
